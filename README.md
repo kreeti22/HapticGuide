@@ -1,155 +1,318 @@
 # HapticGuide
-AI-powered wearable navigation assistant for visually impaired users
 
-HapticGuide is a real-time computer vision system that detects obstacles using a camera and converts them into haptic feedback through a wearable belt. The long-term goal is to provide safe navigation by combining object detection, depth estimation, and navigation guidance.
+> **AI-powered wearable navigation assistant for visually impaired users**
 
-## Project Status
+HapticGuide is a real-time computer vision system that detects obstacles using a camera and converts them into directional haptic feedback through a wearable belt. The system combines object detection, monocular depth estimation, obstacle fusion, and navigation logic to help users safely navigate their surroundings.
 
-Current Progress: Phase 1 & 2 Complete
+---
 
-Camera Stream
-│
-▼
+# Current Status
+
+**Phase 1–4 Complete**
+
+```
+Camera
+   │
+   ▼
+Browser (getUserMedia)
+   │
+   ▼
+Canvas → JPEG Compression
+   │
+   ▼
 WebSocket Streaming
-│
-▼
+   │
+   ▼
 FastAPI Backend
-│
-▼
-YOLOv8n Detection
-│
-▼
-Bounding Boxes + Detection JSON
-
-
-*Depth estimation, obstacle fusion, navigation, and ESP32 integration are planned in upcoming phases.*
-
----
-
-## Vision & Architecture
-
-The system consists of three major components:
-1. **Web Client**: Captures camera frames and streams them to the backend.
-2. **AI Backend**: Detects surrounding objects, estimates obstacle distance, and determines obstacle priority.
-3. **Wearable Belt**: Receives obstacle information and generates directional haptic feedback.
-
-Browser (getUserMedia -> Canvas -> JPEG Compression -> WebSocket)
-│
-▼
-FastAPI Backend (Frame Decoder -> YOLOv8n -> Detection Pipeline -> OpenCV Visualization)
-
+   │
+   ├──────────────┐
+   ▼              ▼
+YOLOv8n      Depth Anything V2
+   │              │
+   └──────┬───────┘
+          ▼
+ Object-Depth Fusion
+          ▼
+ Structured Obstacle JSON
+```
 
 ---
 
-## Tech Stack & Structure
+# Features
 
-- **Frontend**: HTML, CSS, JavaScript, WebSocket API, `getUserMedia()`, Canvas API
-- **Backend**: FastAPI, OpenCV, NumPy, WebSockets, Ultralytics YOLOv8
+- ✅ Real-time browser camera streaming
+- ✅ WebSocket communication
+- ✅ FastAPI backend
+- ✅ YOLOv8n object detection
+- ✅ Depth Anything V2 (Hugging Face Transformers)
+- ✅ Object-depth fusion
+- ✅ Per-object relative depth estimation
+- ✅ Structured obstacle output
+- 🚧 Navigation logic (In Progress)
+- 🚧 ESP32 wearable integration (Upcoming)
 
+---
+
+# Architecture
+
+```
+┌──────────────────────┐
+│      Web Client      │
+│  HTML + JavaScript   │
+│  getUserMedia()      │
+└──────────┬───────────┘
+           │
+           ▼
+     JPEG Frames
+           │
+           ▼
+      WebSocket
+           │
+           ▼
+┌─────────────────────────────┐
+│       FastAPI Backend       │
+│                             │
+│   Frame Decoder             │
+│          │                  │
+│          ▼                  │
+│  ┌──────────────┐           │
+│  │ YOLOv8n      │           │
+│  └──────────────┘           │
+│          │                  │
+│  ┌──────────────┐           │
+│  │ DepthAnything│           │
+│  └──────────────┘           │
+│          │                  │
+│          ▼                  │
+│   Object-Depth Fusion       │
+│          │                  │
+│          ▼                  │
+│   Obstacle Decision Engine  │
+└──────────┬──────────────────┘
+           │
+           ▼
+      ESP32 Controller
+           │
+           ▼
+   Wearable Haptic Belt
+```
+
+---
+
+# Tech Stack
+
+## Frontend
+
+- HTML5
+- CSS3
+- JavaScript
+- Canvas API
+- WebSocket API
+- getUserMedia()
+
+## Backend
+
+- FastAPI
+- OpenCV
+- NumPy
+- WebSockets
+- Ultralytics YOLOv8
+- Hugging Face Transformers
+- PyTorch
+
+## AI Models
+
+- YOLOv8n
+- Depth Anything V2 Small
+
+---
+
+# Project Structure
+
+```
 HapticGuide/
+
 ├── backend/
 │   ├── app.py
 │   ├── detector.py
+│   ├── depth.py
+│   ├── fusion.py
+│   ├── test.py
 │   └── requirements.txt
+│
 └── frontend/
-├── index.html
-└── script.js
-
+    ├── index.html
+    └── script.js
+```
 
 ---
 
-## Development Task Tracker
+# Development Progress
 
-### Phase 1: Camera Streaming
-- [x] Implement browser camera access (`getUserMedia`)
-- [x] Set up live video preview canvas
-- [x] Implement canvas frame capture & JPEG compression
-- [x] Establish WebSocket streaming client-side
-- [x] Create FastAPI WebSocket server endpoint
-- [x] Implement frame decoding pipeline using OpenCV
+## Phase 1 — Camera Streaming 
 
-### Phase 2: Real-Time Object Detection
-- [x] Integrate Ultralytics YOLOv8n model
-- [x] Build automatic model loading & initialization system
-- [x] Implement real-time frame inference loop
-- [x] Render bounding box visualization on frames
-- [x] Extract confidence scores and object labels
-- [x] Build structured JSON detection serializer
+- [x] Browser camera access (`getUserMedia`)
+- [x] Live video preview
+- [x] Canvas frame capture
+- [x] JPEG compression
+- [x] WebSocket streaming
+- [x] FastAPI WebSocket server
+- [x] OpenCV frame decoding
 
-#### Sample Detection Output Schema
+---
+
+## Phase 2 — Real-Time Object Detection 
+
+- [x] YOLOv8n integration
+- [x] Automatic model loading
+- [x] Real-time inference
+- [x] Bounding box visualization
+- [x] Confidence extraction
+- [x] Structured detection JSON
+
+Example:
+
 ```json
-[
-  {
+{
     "label": "person",
-    "confidence": 0.92,
-    "bbox": [120, 88, 605, 479]
-  },
-  {
-    "label": "chair",
-    "confidence": 0.81,
-    "bbox": [15, 210, 164, 472]
-  }
-]
+    "confidence": 0.91,
+    "bbox": [120, 80, 330, 470]
+}
+```
 
-Phase 3: Monocular Depth Estimation
-[ ] Evaluate candidate models (Depth Anything V2 vs Metric3D)
+---
 
-[ ] Integrate depth estimation pipeline into backend
+## Phase 3 — Monocular Depth Estimation 
 
-[ ] Calculate per-frame pixel depth maps
+- [x] Integrated Depth Anything V2
+- [x] Hugging Face Transformers implementation
+- [x] GPU acceleration (CUDA)
+- [x] Relative depth map generation
+- [x] NumPy depth map output
 
-[ ] Output per-object distance estimation ({"label": "person", "distance": 1.42})
+Example:
 
-Phase 4: Object-Depth Fusion
-[ ] Align 2D bounding boxes with monocular depth maps
+```
+Depth Map
 
-[ ] Calculate bounding-box spatial mean depth
+Shape: (407, 612)
+Min: -0.36
+Max: 6.15
+```
 
-[ ] Implement object-specific distance calculation engine
+---
 
-Phase 5: Obstacle Decision Engine
-[ ] Implement directional spatial grid partitioning (Left, Center, Right)
+## Phase 4 — Object-Depth Fusion 
 
-[ ] Calculate relative obstacle danger levels based on distance & velocity
+- [x] Bounding-box alignment
+- [x] Lower-center depth sampling
+- [x] Median depth estimation
+- [x] Object-wise depth calculation
 
-[ ] Determine primary high-priority collision threat
+Example Output
 
-Phase 6: Navigation System
-[ ] Integrate external route planning & navigation API
+```json
+{
+    "label": "person",
+    "confidence": 0.87,
+    "bbox": [363, 86, 441, 273],
+    "depth": 2.11
+}
+```
 
-[ ] Implement turn-by-turn instruction handler
+---
 
-[ ] Convert route maneuvers into spatial haptic guidance signals
+## Phase 5 — Obstacle Decision Engine 
 
-Phase 7: ESP32 Wearable Belt Integration
-[ ] Establish communication channel between backend and ESP32
+- [ ] Left / Center / Right spatial partitioning
+- [ ] Obstacle priority ranking
+- [ ] Collision risk estimation
+- [ ] Closest obstacle selection
 
-[ ] Define directional vibration intensity payload format (e.g., {"left": 0, "center": 255, "right": 0})
+Target Output
 
-[ ] Implement PWM driver code on ESP32 for haptic motor control
+```json
+{
+    "label": "person",
+    "direction": "center",
+    "depth": 2.11,
+    "priority": 1
+}
+```
 
-[ ] End-to-end wearable system integration test
+---
 
-Master Pipeline Roadmap
+## Phase 6 — Navigation System 
+
+- [ ] Route planning integration
+- [ ] Turn-by-turn instruction parsing
+- [ ] Navigation-aware obstacle handling
+- [ ] Smart vibration guidance
+
+---
+
+## Phase 7 — ESP32 Wearable Belt 
+
+- [ ] Backend → ESP32 communication
+- [ ] Vibration payload protocol
+- [ ] PWM motor driver
+- [ ] Multi-motor haptic feedback
+- [ ] End-to-end wearable testing
+
+Example Payload
+
+```json
+{
+    "left": 0,
+    "center": 255,
+    "right": 0
+}
+```
+
+---
+
+# Roadmap
+
+```
 Camera
-  │
-  ▼
-Object Detection (YOLOv8n) [Done]
-  │
-  ▼
-Depth Estimation [In Progress]
-  │
-  ▼
-Object + Depth Fusion [Planned]
-  │
-  ▼
-Obstacle Classification [Planned]
-  │
-  ▼
-Navigation Logic [Planned]
-  │
-  ▼
-ESP32 Haptic Belt [Planned]
-  │
-  ▼
-Directional Vibration Feedback [Planned]
+    │
+    ▼
+YOLOv8n Detection
+    │
+    ▼
+Depth Anything V2
+    │
+    ▼
+Object-Depth Fusion
+    │
+    ▼
+Obstacle Decision Engine
+    │
+    ▼
+Navigation Logic
+    │
+    ▼
+ESP32 Controller
+    │
+    ▼
+Wearable Haptic Belt
+    │
+    ▼
+Real-Time Navigation Assistance
+```
+
+---
+
+# Current Milestone
+
+Browser-based live camera streaming
+
+Real-time YOLOv8 object detection
+
+Monocular depth estimation
+
+Object-depth fusion
+
+Obstacle prioritization
+
+Wearable haptic navigation
