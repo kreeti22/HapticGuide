@@ -8,17 +8,9 @@ HapticGuide is a real-time computer vision system that detects obstacles using a
 Current Progress: Phase 1 & 2 Complete
 
 Camera Stream
-│
-▼
 WebSocket Streaming
-│
-▼
 FastAPI Backend
-│
-▼
 YOLOv8n Detection
-│
-▼
 Bounding Boxes + Detection JSON
 
 
@@ -46,6 +38,7 @@ FastAPI Backend (Frame Decoder -> YOLOv8n -> Detection Pipeline -> OpenCV Visual
 - **Frontend**: HTML, CSS, JavaScript, WebSocket API, `getUserMedia()`, Canvas API
 - **Backend**: FastAPI, OpenCV, NumPy, WebSockets, Ultralytics YOLOv8
 
+```
 HapticGuide/
 ├── backend/
 │   ├── app.py
@@ -54,7 +47,7 @@ HapticGuide/
 └── frontend/
 ├── index.html
 └── script.js
-
+```
 
 ---
 
