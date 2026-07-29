@@ -90,7 +90,7 @@ HapticGuide/
     "bbox": [15, 210, 164, 472]
   }
 ]
-
+```
 Phase 3: Monocular Depth Estimation
 [ ] Evaluate candidate models (Depth Anything V2 vs Metric3D)
 
