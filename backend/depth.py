@@ -48,4 +48,4 @@ def estimate_depth(frame):
 
     depth = predicted_depth.cpu().numpy()
 
-    return depth
+    return depth    

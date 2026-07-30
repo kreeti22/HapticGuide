@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<link rel="stylesheet" href="style.css">
 <html>
 
 <head>
@@ -9,7 +10,18 @@
 
 <h2>Camera Stream</h2>
 
-<video id="video" autoplay playsinline></video>
+<div class="camera-container">
+
+    <video
+        id="video"
+        autoplay
+        playsinline
+        muted>
+    </video>
+
+    <canvas id="overlay"></canvas>
+
+</div>
 
 <script src="script.js"></script>
 
