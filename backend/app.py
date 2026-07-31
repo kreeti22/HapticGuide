@@ -1,142 +1,36 @@
-from concurrent.futures import ThreadPoolExecutor
-import json
-import time
+﻿from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 
-import cv2
-import numpy as np
+app = FastAPI(title="HapticGuide Deprecated")
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-
-from detector import detect
-from depth import estimate_depth
-from fusion import fuse_detections
-from decision import prioritize_objects, generate_haptic_command
-
-
-app = FastAPI()
-
-# Two workers:
-# 1 -> YOLO
-# 2 -> Depth Anything
-executor = ThreadPoolExecutor(max_workers=2)
-
-
-def serialize_objects(objects):
-    serialized = []
-
-    for obj in objects:
-        serialized.append({
-            "label": obj["label"],
-            "confidence": round(float(obj["confidence"]), 2),
-            "bbox": [int(v) for v in obj["bbox"]],
-            "depth": (
-                round(float(obj["depth"]), 2)
-                if obj["depth"] is not None
-                else None
-            ),
-            "direction": obj["direction"],
-            "priority": int(obj["priority"])
-        })
-
-    return serialized
-
-
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-
-    await websocket.accept()
-
-    print("Client Connected")
-
-    last_print = time.time()
-
-    try:
-
-        while True:
-
-            
-            data = await websocket.receive_bytes()
-
-            frame = cv2.imdecode(
-                np.frombuffer(data, np.uint8),
-                cv2.IMREAD_COLOR
-            )
-
-            if frame is None:
-                continue
-
-            start = time.perf_counter()
-
-            yolo_future = executor.submit(detect, frame.copy())
-            depth_future = executor.submit(estimate_depth, frame.copy())
-
-            annotated_frame, detections = yolo_future.result()
-            depth_map = depth_future.result()
-
-            
-            objects = fuse_detections(
-                detections,
-                depth_map
-            )
-
-     
-            objects = prioritize_objects(
-                objects,
-                frame.shape[1]
-            )
-
-           
-            haptic_command = generate_haptic_command(objects)
-
-   
-            payload = {
-                "objects": serialize_objects(objects),
-                "haptic": haptic_command
-            }
-
-            await websocket.send_text(
-                json.dumps(payload)
-            )
-            elapsed = (
-                time.perf_counter() - start
-            ) * 1000
-
-            if time.time() - last_print >= 1:
-
-                print(f"Inference Time: {elapsed:.1f} ms")
-    
-                if objects:
-
-                    for obj in objects:
-
-                        print(
-                            f"[P{obj['priority']}] "
-                            f"{obj['label']} | "
-                            f"{obj['direction']} | "
-                            f"Depth={obj['depth']:.2f} | "
-                            f"Conf={obj['confidence']:.2f}"
-                        )
-
-                    print("\nHaptic Command:")
-                    print(haptic_command)
-
-                else:
-
-                    print("No objects detected.")
-
-                last_print = time.time()
-
-            cv2.imshow(
-                "HapticGuide",
-                annotated_frame
-            )
-
-            cv2.waitKey(1)
-
-    except WebSocketDisconnect:
-
-        print("❌ Client disconnected")
-
-    finally:
-
-        cv2.destroyAllWindows()
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    return HTMLResponse(
+        """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HapticGuide Deprecated</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #111827; color: #f8fafc; margin: 0; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { max-width: 520px; padding: 24px; border-radius: 20px; background: rgba(15, 23, 42, 0.95); box-shadow: 0 10px 40px rgba(0,0,0,0.35); }
+    h1 { margin-top: 0; font-size: 28px; }
+    p { line-height: 1.6; }
+    code { display: block; padding: 12px; background: #0f172a; border-radius: 12px; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Deprecated Server</h1>
+    <p>You are running <strong>backend/app.py</strong>, which is the old WebSocket transport layer and should no longer be used.</p>
+    <p>Use the new HTTP transport server instead:</p>
+    <code>python main.py</code>
+    <p>Then open the same IP address in your browser again.</p>
+  </div>
+</body>
+</html>
+        """,
+        status_code=200,
+    )

@@ -1,8 +1,11 @@
 fastapi
 uvicorn[standard]
+aiortc
+av
 opencv-python
 numpy
 ultralytics
+python-multipart
 
 torch
 torchvision
