@@ -1,17 +1,18 @@
+// AGP 9.0 has built-in Kotlin support — org.jetbrains.kotlin.android is no
+// longer required. The Compose compiler plugin is still applied explicitly.
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "com.hapticguide.camera"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.hapticguide.camera"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
@@ -28,18 +29,18 @@ android {
         }
     }
 
+    // AGP 9.0 defaults Java source/target to 11. Being explicit here ensures
+    // consistent behaviour regardless of AGP default changes in future versions.
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    kotlinOptions {
-        jvmTarget = "11"
-    }
-
     buildFeatures {
         compose = true
     }
+
+
 }
 
 dependencies {
@@ -66,10 +67,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$cameraVersion")
     implementation("androidx.camera:camera-view:$cameraVersion")
 
-    // OkHttp for low-latency streaming
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-
-    // Debug Tooling
+    // Debug tooling
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

@@ -1,70 +1,246 @@
-import asyncio
+"""
+main.py
+-------
+HapticGuide RTSP backend entry point.
+
+Startup sequence
+----------------
+1. Print the HapticGuide banner.
+2. Prompt the user for the phone IP and RTSP port.
+3. Build rtsp://<IP>:<PORT>/live
+4. Store the configured CameraStream in _STATE before uvicorn loads the module.
+5. uvicorn imports main:app — the lifespan hook reads _STATE and calls .start().
+6. On shutdown — lifespan calls .stop().
+
+Why _STATE dict instead of a bare module-level variable
+-------------------------------------------------------
+When uvicorn is launched with `uvicorn.run("main:app", ...)` it imports the
+module *after* __main__ has already assigned _STATE["stream"].
+A bare `camera_stream: CameraStream` declaration at module level is None until
+the assignment runs, and Python name resolution inside the lifespan coroutine
+looks up the module-level name at *call time*, not at decoration time.
+
+Storing the instance in a dict means the lifespan hook does:
+    _STATE["stream"].start()
+which reads from the dict at call time — always getting the value that was
+placed there before uvicorn.run() was called.
+"""
+
 import os
-from socket import socket
+import signal
+import socket
+import sys
 
 import uvicorn
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
-import globals
-from ai_pipeline import process_frame
+from camera_stream import CameraStream
+from shared_state import stop_event
+from ai_worker import start_ai_worker, stop_ai_worker
 from routes import router
 
-app = FastAPI(title="HapticGuide HTTP Transport")
+
+# ---------------------------------------------------------------------------
+# Module-level state container
+# Populated by _collect_config() before uvicorn.run() is called.
+# Read by the lifespan hook after uvicorn imports the module.
+# ---------------------------------------------------------------------------
+
+_STATE: dict = {
+    "stream":     None,   # CameraStream instance — set before uvicorn starts
+    "rtsp_url":   "",
+}
+
+
+# ---------------------------------------------------------------------------
+# Banner
+# ---------------------------------------------------------------------------
+
+def _print_banner() -> None:
+    print(
+        "\n"
+        "╔══════════════════════════════════════════╗\n"
+        "║         HapticGuide AI Server            ║\n"
+        "║         TCP Frame Receiver — v4.0        ║\n"
+        "╚══════════════════════════════════════════╝\n",
+        flush=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Prompt helpers
+# ---------------------------------------------------------------------------
+
+def _prompt_port() -> int:
+    while True:
+        try:
+            raw = input("  Enter TCP Port  (default 9000): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return 9000
+        if not raw:
+            return 9000
+        try:
+            port = int(raw)
+        except ValueError:
+            print("  ✗  Please enter a number.", flush=True)
+            continue
+        if not (1 <= port <= 65535):
+            print("  ✗  Port must be 1–65535.", flush=True)
+            continue
+        return port
+
+
+def _prompt_show_window() -> bool:
+    try:
+        raw = input("  Show debug window? [Y/n]: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        return True
+    return raw not in ("n", "no")
+
+
+def _collect_config() -> None:
+    """
+    Run the interactive prompt, create the CameraStream TCP server,
+    and store it in _STATE so the lifespan hook can reach it.
+    """
+    print("  ─────────────────────────────────────────", flush=True)
+    port        = _prompt_port()
+    show_window = _prompt_show_window()
+
+    print(f"\n  TCP Port   : {port}", flush=True)
+    print(f"  Debug win  : {'yes' if show_window else 'no'}", flush=True)
+    print("  ─────────────────────────────────────────\n", flush=True)
+
+    _STATE["rtsp_url"] = f"tcp://0.0.0.0:{port}"
+    _STATE["stream"]   = CameraStream(
+        tcp_port    = port,
+        show_window = show_window,
+    )
+
+
+# ---------------------------------------------------------------------------
+# FastAPI lifespan
+# ---------------------------------------------------------------------------
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ── Startup ───────────────────────────────────────────────────────────────
+    stream: CameraStream | None = _STATE.get("stream")
+
+    if stream is None:
+        raise RuntimeError(
+            "CameraStream not initialised. "
+            "Run 'python main.py' instead of invoking uvicorn directly."
+        )
+
+    print("[main] Starting camera stream and AI worker…", flush=True)
+    stream.start()
+    start_ai_worker()
+
+    yield   # FastAPI is live
+
+    # ── Shutdown ──────────────────────────────────────────────────────────────
+    print("[main] Shutting down AI worker and camera stream…", flush=True)
+    stop_ai_worker()
+    stream.stop()
+    print("[main] Shutdown complete.", flush=True)
+
+
+# ---------------------------------------------------------------------------
+# FastAPI app
+# ---------------------------------------------------------------------------
+
+app = FastAPI(
+    title       = "HapticGuide",
+    description = (
+        "Read-only telemetry & motor command endpoint server. "
+        "GET /cmd for motor outputs, GET /stats for performance metrics, GET /health for probes."
+    ),
+    version     = "4.0.0",
+    lifespan    = lifespan,
+)
+
 app.include_router(router)
 
 
-def get_available_port(default_port=8000):
-    requested_port = int(os.getenv("PORT", default_port))
-    with socket() as sock:
-        try:
-            sock.bind(("0.0.0.0", requested_port))
-            return requested_port
-        except OSError:
-            pass
+# ---------------------------------------------------------------------------
+# Port finder
+# ---------------------------------------------------------------------------
 
-    for candidate in range(requested_port + 1, requested_port + 20):
-        with socket() as sock:
+def _find_free_port(preferred: int = 8000, search_range: int = 20) -> int:
+    for p in range(preferred, preferred + search_range):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
-                sock.bind(("0.0.0.0", candidate))
-                return candidate
+                s.bind(("0.0.0.0", p))
+                return p
             except OSError:
                 continue
-
-    raise RuntimeError("No free port available")
-
-
-async def frame_worker():
-    """
-    Background worker that processes the newest available frame.
-    If multiple frames arrive while processing, only the latest frame is kept.
-    """
-    while True:
-        await globals.frame_event.wait()
-        globals.frame_event.clear()
-
-        async with globals.frame_lock:
-            frame = globals.latest_frame.get("frame")
-            globals.latest_frame["frame"] = None
-
-        if frame is None:
-            continue
-
-        result = await asyncio.get_running_loop().run_in_executor(
-            None, process_frame, frame
-        )
-
-        globals.latest_command.clear()
-        globals.latest_command.update(result)
+    raise RuntimeError(
+        f"No free port in range {preferred}–{preferred + search_range - 1}."
+    )
 
 
-@app.on_event("startup")
-async def startup_event():
-    globals.frame_event = asyncio.Event()
-    globals.frame_lock = asyncio.Lock()
-    globals.latest_frame = {"frame": None}
-    asyncio.create_task(frame_worker())
+# ---------------------------------------------------------------------------
+# Graceful Ctrl+C
+# ---------------------------------------------------------------------------
 
+def _install_signal_handler() -> None:
+    original = signal.getsignal(signal.SIGINT)
+
+    def _handler(sig, frame):
+        print("\n[main] SIGINT — stopping…", flush=True)
+        stop_event.set()
+        if callable(original):
+            original(sig, frame)
+
+    signal.signal(signal.SIGINT, _handler)
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    port = get_available_port()
-    uvicorn.run("main:app", host="0.0.0.0", port=port, log_level="info")
+    _print_banner()
+
+    try:
+        _collect_config()           # fills _STATE["stream"] before uvicorn starts
+    except (KeyboardInterrupt, EOFError):
+        print("\n[main] Aborted.", flush=True)
+        sys.exit(0)
+
+    _install_signal_handler()
+
+    preferred = int(os.getenv("PORT", 8000))
+    http_port = _find_free_port(preferred)
+
+    if http_port != preferred:
+        print(
+            f"[main] Port {preferred} busy — using {http_port}.",
+            flush=True,
+        )
+
+    print(
+        f"[main] HTTP server  →  http://0.0.0.0:{http_port}\n"
+        f"[main] Endpoints    →  /cmd  /stats  /health\n"
+        f"[main] TCP receiver →  {_STATE['rtsp_url']}\n",
+        flush=True,
+    )
+
+    # Pass the app OBJECT, not the string "main:app".
+    #
+    # Passing a string causes uvicorn to re-import the "main" module in its
+    # own import context. That second import creates a fresh _STATE dict with
+    # stream=None, so the lifespan hook never sees the CameraStream we just
+    # configured. Passing the object directly reuses this already-initialised
+    # module — _STATE["stream"] is already set and lifespan finds it.
+    #
+    # Trade-off: passing the object disables uvicorn's --reload hot-reload
+    # feature, which is fine — we don't use hot-reload in production.
+    uvicorn.run(
+        app,                    # ← object, not string
+        host      = "0.0.0.0",
+        port      = http_port,
+        log_level = "warning",
+    )

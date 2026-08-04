@@ -2,6 +2,7 @@ package com.hapticguide.camera
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
 import android.graphics.Rect
 import android.graphics.YuvImage
@@ -11,275 +12,259 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.io.ByteArrayOutputStream
-import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
- * CameraManager configures CameraX Preview and ImageAnalysis use cases.
- * It handles frame extraction, throttling, conversion to JPEG, and invokes
- * the uploader.
+ * CameraManager
+ * -------------
+ * Binds CameraX and forwards every frame to TcpFrameSender.
+ *
+ * Pipeline
+ * --------
+ *   CameraX (YUV_420_888)
+ *        │
+ *        ├──► PreviewView  (live viewfinder — always active)
+ *        └──► ImageAnalysis
+ *                  │
+ *                  ▼ yuv420ToNv21()        — in-place, preallocated buffer
+ *                  ▼ YuvImage.compressToJpeg() — quality 70
+ *                  ▼ TcpFrameSender.sendFrame()
+ *
+ * Frame drop policy
+ * -----------------
+ * ImageAnalysis is configured with STRATEGY_KEEP_ONLY_LATEST.
+ * If TcpFrameSender is busy or disconnected, the frame is dropped silently.
+ * Latency beats coverage.
+ *
+ * Camera FPS tracking
+ * -------------------
+ * Counted in the ImageAnalysis callback and exposed as cameraFps StateFlow.
+ * Updated every second.
  */
 class CameraManager(
-    private val context: Context,
-    private val frameUploader: FrameUploader,
-    private val settingsManager: SettingsManager,
-    private val onMetricsUpdated: (Int, Float) -> Unit, // (framesSent, currentFps)
-    private val onConnectionStatusUpdated: (String) -> Unit
+    private val context:     Context,
+    private val tcpSender:   TcpFrameSender,
+    private val jpegQuality: Int = 70,
 ) {
+    companion object {
+        private const val TAG = "CameraManager"
+        private val CAPTURE_SIZE = Size(640, 480)
+    }
 
-    private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val mainExecutor   = ContextCompat.getMainExecutor(context)
+    private val cameraExecutor = Executors.newSingleThreadExecutor()
 
-    // Throttling control (8 FPS = 125ms interval)
-    private var lastUploadTimeMs = 0L
-    private val minIntervalMs = 125L
+    // Camera FPS — published to UI
+    private val _cameraFps = MutableStateFlow(0f)
+    val cameraFps: StateFlow<Float> = _cameraFps.asStateFlow()
 
-    // Metrics tracking
-    private var totalFramesSent = 0
-    private var fpsCounter = 0
-    private var fpsLastTimeMs = 0L
-    private var currentFps = 0.0f
+    private var fpsCameraCount  = 0
+    private var fpsCameraLastMs = 0L
 
-    // Preallocated buffer for NV21 frame data (640 * 480 * 1.5 = 460800 bytes)
-    // Reusing this buffer prevents heavy garbage collection overhead (Requirement 16)
-    private val expectedWidth = 640
-    private val expectedHeight = 480
-    private var nv21Buffer = ByteArray(expectedWidth * expectedHeight * 3 / 2)
+    // Preallocated NV21 buffer (640×480 × 1.5 = 460 800 bytes)
+    private var nv21Buffer    = ByteArray(CAPTURE_SIZE.width * CAPTURE_SIZE.height * 3 / 2)
+    private val jpegStream    = ByteArrayOutputStream(64_000)
 
-    // Reusable stream for JPEG compression
-    private val jpegOutputStream = ByteArrayOutputStream(64000) // Initial size 64KB
+    private var isCameraReady = false
+    var isStreaming           = false
+        private set
+
+    // -------------------------------------------------------------------------
+    // Camera lifecycle
+    // -------------------------------------------------------------------------
 
     fun startCamera(lifecycleOwner: LifecycleOwner, previewView: PreviewView) {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+        if (isCameraReady) return
 
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener({
             try {
                 val cameraProvider = cameraProviderFuture.get()
 
-                // Preview Use Case
-                val preview = Preview.Builder().build().also {
-                    it.surfaceProvider = previewView.surfaceProvider
-                }
-
-                // ImageAnalysis Use Case (640x480)
-                // Use the modern API (or setTargetResolution) to lock in 640x480.
-                @Suppress("DEPRECATION")
-                val imageAnalysis = ImageAnalysis.Builder()
-                    .setTargetResolution(Size(expectedWidth, expectedHeight))
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                val resolutionSelector = ResolutionSelector.Builder()
+                    .setResolutionStrategy(
+                        ResolutionStrategy(
+                            CAPTURE_SIZE,
+                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER,
+                        )
+                    )
                     .build()
 
-                imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                    processImageFrame(imageProxy)
+                // ── Preview — live viewfinder ────────────────────────────────
+                val preview = Preview.Builder()
+                    .setResolutionSelector(resolutionSelector)
+                    .build()
+                    .also { it.surfaceProvider = previewView.surfaceProvider }
+
+                // ── ImageAnalysis — frame capture ────────────────────────────
+                val analysis = ImageAnalysis.Builder()
+                    .setResolutionSelector(resolutionSelector)
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                    .build()
+
+                analysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                    processFrame(imageProxy)
                 }
 
-                // Default back camera selection
-                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-                // Unbind previous use cases before rebinding
                 cameraProvider.unbindAll()
-
-                // Bind use cases to Lifecycle
                 cameraProvider.bindToLifecycle(
                     lifecycleOwner,
-                    cameraSelector,
+                    CameraSelector.DEFAULT_BACK_CAMERA,
                     preview,
-                    imageAnalysis
+                    analysis,
                 )
 
-                onConnectionStatusUpdated("Camera Ready")
+                isCameraReady = true
+                Log.i(TAG, "Camera bound — ${CAPTURE_SIZE.width}×${CAPTURE_SIZE.height}")
 
             } catch (e: Exception) {
-                Log.e("CameraManager", "Failed to bind camera use cases", e)
-                onConnectionStatusUpdated("Camera Init Error")
+                Log.e(TAG, "Failed to bind camera: ${e.message}", e)
             }
-        }, ContextCompat.getMainExecutor(context))
+        }, mainExecutor)
     }
 
-    /**
-     * Process each incoming camera frame. This runs on a single background thread executor.
-     */
-    private fun processImageFrame(imageProxy: ImageProxy) {
-        val now = System.currentTimeMillis()
+    // -------------------------------------------------------------------------
+    // Streaming control
+    // -------------------------------------------------------------------------
 
-        // 1. Enforce max 8 FPS limit (Requirement 6)
-        if (now - lastUploadTimeMs < minIntervalMs) {
-            imageProxy.close()
-            return
-        }
+    fun startStreaming(ip: String, port: Int) {
+        if (!isCameraReady) { Log.w(TAG, "Camera not ready"); return }
+        tcpSender.start(ip, port)
+        isStreaming = true
+        Log.i(TAG, "Streaming started → $ip:$port")
+    }
 
-        // 2. Keep only one upload active. If busy, drop frame (Requirement 7)
-        if (frameUploader.isUploading.get()) {
-            imageProxy.close()
-            return
-        }
+    fun stopStreaming() {
+        tcpSender.stop()
+        isStreaming = false
+        Log.i(TAG, "Streaming stopped")
+    }
 
-        val width = imageProxy.width
-        val height = imageProxy.height
-        val requiredSize = width * height * 3 / 2
+    // -------------------------------------------------------------------------
+    // Per-frame processing  (runs on cameraExecutor — single background thread)
+    // -------------------------------------------------------------------------
 
-        // Verify and dynamically scale the buffer if dimensions change (e.g. portrait rotation)
-        var buffer = nv21Buffer
-        if (buffer.size != requiredSize) {
-            Log.d("CameraManager", "Adjusting NV21 buffer size to $requiredSize (resolution: ${width}x${height})")
-            buffer = ByteArray(requiredSize)
-            nv21Buffer = buffer
-        }
-
+    private fun processFrame(imageProxy: ImageProxy) {
         try {
-            // 3. Convert YUV_420_888 to NV21 into the preallocated buffer (Requirement 16)
-            yuv420ToNv21(imageProxy, buffer)
+            trackCameraFps()
 
-            // 4. Single-pass: NV21 → decoded Bitmap via YuvImage, scale to 416×416, compress to JPEG.
-            //    This replaces the previous double encode/decode cycle (NV21→JPEG→Bitmap→JPEG),
-            //    saving one full JPEG encode and one JPEG decode per frame for higher FPS.
-            val yuvImage = YuvImage(buffer, ImageFormat.NV21, width, height, null)
-            jpegOutputStream.reset()
-            yuvImage.compressToJpeg(Rect(0, 0, width, height), 85, jpegOutputStream)
+            // Drop immediately when not streaming to keep the encoder idle.
+            if (!isStreaming) return
 
-            val options = android.graphics.BitmapFactory.Options().apply { inMutable = true }
-            val originalBitmap = android.graphics.BitmapFactory.decodeByteArray(
-                jpegOutputStream.toByteArray(), 0, jpegOutputStream.size(), options
-            )
+            val width  = imageProxy.width
+            val height = imageProxy.height
 
-            // Scale to 416×416 with filter=false (nearest-neighbour) — faster and sufficient for inference
-            val scaledBitmap = Bitmap.createScaledBitmap(originalBitmap, 416, 416, false)
-
-            jpegOutputStream.reset()
-            scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 70, jpegOutputStream)
-            val jpegBytes = jpegOutputStream.toByteArray()
-
-            // Recycle native Bitmaps immediately to keep VM memory footprint low (Requirement 16)
-            originalBitmap.recycle()
-            scaledBitmap.recycle()
-
-            // 5. CRITICAL: Close the ImageProxy IMMEDIATELY after JPEG compression.
-            // This frees up the camera sensor frame buffer so that CameraX doesn't stall.
-            // Do not wait for the upload network request to finish (Requirement 5).
-            imageProxy.close()
-
-            // Update timestamp of upload attempt
-            lastUploadTimeMs = now
-
-            // 6. Upload JPEG bytes asynchronously
-            val serverAddress = settingsManager.getServerIp()
-            onConnectionStatusUpdated("Streaming...")
-
-            val started = frameUploader.uploadFrame(
-                serverAddress,
-                jpegBytes,
-                object : FrameUploader.UploadCallback {
-                    override fun onUploadSuccess() {
-                        totalFramesSent++
-                        trackFps()
-                        onMetricsUpdated(totalFramesSent, currentFps)
-                        onConnectionStatusUpdated("Connected")
-                    }
-
-                    override fun onUploadFailure(error: String) {
-                        onConnectionStatusUpdated("Error: $error")
-                    }
-                }
-            )
-
-            if (!started) {
-                // Should not happen as we checked frameUploader.isUploading above,
-                // but if it failed to start, restore status.
-                onConnectionStatusUpdated("Frame Dropped")
+            // Resize NV21 buffer if the actual resolution differs from expected.
+            val required = width * height * 3 / 2
+            if (nv21Buffer.size != required) {
+                nv21Buffer = ByteArray(required)
             }
 
-        } catch (e: Exception) {
-            Log.e("CameraManager", "Error processing frame: ${e.message}", e)
+            // ── YUV_420_888 → NV21 (in-place, no allocation) ────────────────
+            yuv420ToNv21(imageProxy, nv21Buffer)
+
+            // ── NV21 → JPEG (quality 70) ─────────────────────────────────────
+            jpegStream.reset()
+            YuvImage(nv21Buffer, ImageFormat.NV21, width, height, null)
+                .compressToJpeg(Rect(0, 0, width, height), jpegQuality, jpegStream)
+            val jpeg = jpegStream.toByteArray()
+
+            // ── Send over TCP ─────────────────────────────────────────────────
+            tcpSender.sendFrame(jpeg)
+
+        } finally {
+            // Always close — returns the CameraX buffer to the sensor pipeline.
             imageProxy.close()
         }
     }
 
+    // -------------------------------------------------------------------------
+    // YUV_420_888 → NV21 conversion
+    // -------------------------------------------------------------------------
+
     /**
-     * Converts an ImageProxy (YUV_420_888) to NV21 format and writes it directly to the target byte array.
+     * Convert an ImageProxy (YUV_420_888) to NV21 in-place into [output].
+     *
+     * NV21 layout: Y plane (width × height bytes), then interleaved VU
+     * (width/2 × height/2 × 2 bytes).
+     *
+     * Handles non-unit pixel strides and non-width row strides correctly.
+     * These are common on Snapdragon and MediaTek devices.
      */
-    private fun yuv420ToNv21(image: ImageProxy, target: ByteArray) {
-        val width = image.width
+    private fun yuv420ToNv21(image: ImageProxy, output: ByteArray) {
+        val width  = image.width
         val height = image.height
+
         val yPlane = image.planes[0]
         val uPlane = image.planes[1]
         val vPlane = image.planes[2]
 
-        val yBuffer = yPlane.buffer
-        val uBuffer = uPlane.buffer
-        val vBuffer = vPlane.buffer
+        val yBuf = yPlane.buffer
+        val uBuf = uPlane.buffer
+        val vBuf = vPlane.buffer
 
-        val ySize = yBuffer.remaining()
+        val yRowStride    = yPlane.rowStride
+        val yPixelStride  = yPlane.pixelStride
+        val uvRowStride   = uPlane.rowStride   // same for U and V on all known Android devices
+        val uvPixelStride = uPlane.pixelStride // same for U and V
 
-        // 1. Copy Y-channel
-        val yRowStride = yPlane.rowStride
-        val yPixelStride = yPlane.pixelStride
         var pos = 0
-        
-        if (yPixelStride == 1 && yRowStride == width) {
-            yBuffer.get(target, 0, ySize)
-            pos = ySize
-        } else {
-            for (row in 0 until height) {
-                yBuffer.position(row * yRowStride)
-                for (col in 0 until width) {
-                    target[pos++] = yBuffer.get()
-                    if (yPixelStride > 1) {
-                        yBuffer.position(yBuffer.position() + yPixelStride - 1)
-                    }
-                }
+
+        // ── Y plane ──────────────────────────────────────────────────────────
+        for (row in 0 until height) {
+            val rowBase = row * yRowStride
+            for (col in 0 until width) {
+                output[pos++] = yBuf.get(rowBase + col * yPixelStride)
             }
         }
 
-        // 2. Interleave V and U channels (NV21 format: VUVUVU...)
-        val uRowStride = uPlane.rowStride
-        val uPixelStride = uPlane.pixelStride
-        val vRowStride = vPlane.rowStride
-        val vPixelStride = vPlane.pixelStride
-
-        val uvWidth = width / 2
+        // ── VU interleaved (NV21 has V before U) ─────────────────────────────
+        val uvWidth  = width  / 2
         val uvHeight = height / 2
 
         for (row in 0 until uvHeight) {
-            val uRowStart = row * uRowStride
-            val vRowStart = row * vRowStride
+            val uRowBase = row * uvRowStride
+            val vRowBase = row * vPlane.rowStride   // use vPlane.rowStride — may differ
             for (col in 0 until uvWidth) {
-                val uPos = uRowStart + col * uPixelStride
-                val vPos = vRowStart + col * vPixelStride
-
-                target[pos++] = vBuffer.get(vPos)
-                target[pos++] = uBuffer.get(uPos)
+                output[pos++] = vBuf.get(vRowBase + col * uvPixelStride)  // V first
+                output[pos++] = uBuf.get(uRowBase + col * uvPixelStride)  // then U
             }
         }
     }
 
-    /**
-     * Live calculation of Upload FPS.
-     */
-    private fun trackFps() {
-        val currentTime = System.currentTimeMillis()
-        if (fpsLastTimeMs == 0L) {
-            fpsLastTimeMs = currentTime
-            fpsCounter = 1
-            return
-        }
+    // -------------------------------------------------------------------------
+    // Camera FPS tracking
+    // -------------------------------------------------------------------------
 
-        fpsCounter++
-        val elapsed = currentTime - fpsLastTimeMs
-        if (elapsed >= 1000) {
-            currentFps = (fpsCounter * 1000f) / elapsed
-            fpsCounter = 0
-            fpsLastTimeMs = currentTime
+    private fun trackCameraFps() {
+        val now = System.currentTimeMillis()
+        fpsCameraCount++
+        if (fpsCameraLastMs == 0L) { fpsCameraLastMs = now; return }
+        val elapsed = now - fpsCameraLastMs
+        if (elapsed >= 1_000L) {
+            _cameraFps.value  = fpsCameraCount * 1_000f / elapsed
+            fpsCameraCount    = 0
+            fpsCameraLastMs   = now
         }
     }
 
-    /**
-     * Shut down executor when class is cleaned up.
-     */
+    // -------------------------------------------------------------------------
+    // Lifecycle
+    // -------------------------------------------------------------------------
+
     fun shutdown() {
-        cameraExecutor.shutdown()
+        stopStreaming()
+        cameraExecutor.shutdownNow()
     }
 }

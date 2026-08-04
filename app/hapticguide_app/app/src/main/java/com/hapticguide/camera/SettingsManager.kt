@@ -4,33 +4,35 @@ import android.content.Context
 import android.content.SharedPreferences
 
 /**
- * SettingsManager encapsulates access to SharedPreferences for saving and retrieving
- * application configurations, primarily the local server IP address.
+ * SettingsManager
+ * ---------------
+ * Persists the TCP server address and port across app restarts.
+ * Backed by SharedPreferences — non-blocking apply() writes.
  */
 class SettingsManager(context: Context) {
 
-    private val sharedPreferences: SharedPreferences = context.getSharedPreferences(
-        PREFS_NAME,
-        Context.MODE_PRIVATE
-    )
+    private val prefs: SharedPreferences =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     companion object {
-        private const val PREFS_NAME = "camera_streamer_prefs"
-        private const val KEY_SERVER_IP = "server_ip"
-        private const val DEFAULT_SERVER_IP = "192.168.1.100:8000/receive"
+        private const val PREFS_NAME        = "hapticguide_prefs"
+        private const val KEY_SERVER_IP     = "server_ip"
+        private const val KEY_SERVER_PORT   = "server_port"
+        private const val DEFAULT_SERVER_IP = "192.168.1.100"
+        private const val DEFAULT_PORT      = 9000
     }
 
-    /**
-     * Gets the currently saved server IP. Defaults to "192.168.1.100".
-     */
-    fun getServerIp(): String {
-        return sharedPreferences.getString(KEY_SERVER_IP, DEFAULT_SERVER_IP) ?: DEFAULT_SERVER_IP
-    }
+    fun getServerIp(): String =
+        prefs.getString(KEY_SERVER_IP, DEFAULT_SERVER_IP) ?: DEFAULT_SERVER_IP
 
-    /**
-     * Saves the server IP address to SharedPreferences.
-     */
     fun setServerIp(ip: String) {
-        sharedPreferences.edit().putString(KEY_SERVER_IP, ip.trim()).apply()
+        prefs.edit().putString(KEY_SERVER_IP, ip.trim()).apply()
+    }
+
+    fun getServerPort(): Int =
+        prefs.getInt(KEY_SERVER_PORT, DEFAULT_PORT)
+
+    fun setServerPort(port: Int) {
+        prefs.edit().putInt(KEY_SERVER_PORT, port).apply()
     }
 }
