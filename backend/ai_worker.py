@@ -49,6 +49,7 @@ from shared_state import frame_slot, stream_stats
 from detector import YOLODetector, DetectedObject
 from object_analyzer import ObjectAnalyzer, AnalyzedObject, object_analyzer
 from object_filter import ObjectFilter, object_filter
+from target_selector import TargetSelector, SelectedTarget, target_selector
 from tracker import ByteTracker, TrackedObject, byte_tracker
 from risk_estimator import RiskEstimator, RiskObject, risk_estimator
 from decision_engine import DecisionEngine, decision_engine
@@ -74,6 +75,7 @@ class AIWorker:
         self.detector: Optional[YOLODetector] = None
         self.object_analyzer: ObjectAnalyzer = object_analyzer
         self.object_filter: ObjectFilter = object_filter
+        self.target_selector: TargetSelector = target_selector
         self.tracker: ByteTracker = byte_tracker
         self.risk_estimator: RiskEstimator = risk_estimator
         self.decision_engine: DecisionEngine = decision_engine
@@ -150,6 +152,9 @@ class AIWorker:
             detections: List[DetectedObject] = self.detector.detect(frame)
             analyzed_objects: List[AnalyzedObject] = self.object_analyzer.analyze(detections, img_width=w)
 
+            # Select ONE target from all analyzed objects (largest area — Rule V1)
+            selected_target: Optional[SelectedTarget] = self.target_selector.select(analyzed_objects)
+
             raw_count = len(self.detector.last_raw_boxes) if hasattr(self.detector, "last_raw_boxes") and self.detector.last_raw_boxes is not None else len(detections)
             conversion_count = len(detections)
 
@@ -160,7 +165,7 @@ class AIWorker:
             risk_objects: List[RiskObject] = self.risk_estimator.estimate_risk(tracked_objects, w, h)
             display_count = len(risk_objects)
 
-            motor_command: Dict[str, int] = self.decision_engine.compute_motor_command(risk_objects)
+            motor_command: Dict[str, int] = self.decision_engine.compute_motor_command(selected_target)
             self._yolo_ms = (time.perf_counter() - yolo_start) * 1000.0
 
             print("---------------------------------------", flush=True)
@@ -186,7 +191,7 @@ class AIWorker:
 
             # 4. Render OpenCV debug visualization window on frame.copy()
             if self._show_debug_window:
-                self._render_debug_window(frame, frame_age_ms, analyzed_objects, motor_command)
+                self._render_debug_window(frame, frame_age_ms, analyzed_objects, motor_command, selected_target)
 
     def _render_waiting_frame(self) -> None:
         """Display black image with 'Waiting for Camera...' if window is active."""
@@ -232,21 +237,32 @@ class AIWorker:
         frame_age_ms: float,
         analyzed_objects: List[AnalyzedObject],
         motor_command: Dict[str, int],
+        selected_target: Optional[SelectedTarget] = None,
     ) -> None:
-        """Render debug frame copy displaying Class, Priority, Area, and Position for analyzed objects."""
-        # Create a copy so original frame is never modified
+        """
+        Render debug frame copy.
+
+        Selected target  → green bounding box  (0, 255, 0)
+        All other objects → blue bounding box   (255, 100, 0)
+        Labels always show: Class, Priority, Area, Position.
+        """
         debug_frame = frame.copy()
         h, w = frame.shape[:2]
 
-        # 1. Draw bounding boxes and multi-line metadata labels for each analyzed object
+        # Identify the selected target's bbox for O(1) lookup in the draw loop.
+        # Use bbox as the identity key — it is unique per detection per frame.
+        selected_bbox = selected_target.bbox if selected_target is not None else None
+
+        # 1. Draw bounding boxes and metadata labels for each analyzed object
         for a_obj in analyzed_objects:
             x1, y1, x2, y2 = a_obj.bbox
-            color = (0, 255, 0) # Green box
 
-            # Box
+            # Green for the selected target; blue for everything else
+            is_selected = (selected_bbox is not None and a_obj.bbox == selected_bbox)
+            color       = (0, 255, 0) if is_selected else (255, 100, 0)
+
             cv2.rectangle(debug_frame, (x1, y1), (x2, y2), color, 2)
 
-            # Metadata text labels
             labels = [
                 f"{a_obj.class_name.capitalize()}",
                 f"P={a_obj.priority}",
@@ -270,7 +286,7 @@ class AIWorker:
                     (x1 + 2, max(y_text - 1, th)),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.45,
-                    (0, 255, 255),
+                    (0, 255, 255) if is_selected else (180, 180, 255),
                     1,
                     cv2.LINE_AA,
                 )
@@ -278,15 +294,20 @@ class AIWorker:
 
         # 2. Draw top-left metrics overlay
         active_motors = [f"{k[0].upper()}:{v}" for k, v in motor_command.items() if v > 0]
-        cmd_summary = ", ".join(active_motors) if active_motors else "OFF"
+        cmd_summary   = ", ".join(active_motors) if active_motors else "OFF"
+        target_str    = (
+            f"{selected_target.class_name.capitalize()} (Area={selected_target.area})"
+            if selected_target else "None"
+        )
 
         overlay_lines = [
-            f"AI FPS: {self._ai_fps:.1f}",
-            f"YOLO Time: {self._yolo_ms:.1f} ms",
-            f"Analyzed Count: {len(analyzed_objects)}",
-            f"Motor Cmd: {cmd_summary}",
-            f"Frame Age: {frame_age_ms:.1f} ms",
-            f"Resolution: {w}x{h}",
+            f"AI FPS:   {self._ai_fps:.1f}",
+            f"YOLO ms:  {self._yolo_ms:.1f}",
+            f"Objects:  {len(analyzed_objects)}",
+            f"Target:   {target_str}",
+            f"Motor:    {cmd_summary}",
+            f"Age:      {frame_age_ms:.1f} ms",
+            f"Res:      {w}x{h}",
         ]
 
         y_pos = 25

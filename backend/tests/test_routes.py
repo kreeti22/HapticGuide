@@ -50,9 +50,13 @@ def test_get_stats_endpoint(client):
     data = response.json()
 
     assert "camera_fps" in data
+    assert "yolo_fps" in data
+    assert "current_target" in data
+    assert "current_command" in data
+    assert "frame_age" in data
+    assert "frame_age_ms" in data
     assert "recv_fps" in data
     assert "ai_fps" in data
-    assert "frame_age_ms" in data
     assert "yolo_time_ms" in data
     assert "current_resolution" in data
     assert "client_ip" in data

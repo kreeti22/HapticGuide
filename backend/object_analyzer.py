@@ -18,33 +18,7 @@ from dataclasses import dataclass
 from typing import List, Dict, Optional
 
 from detector import DetectedObject
-
-
-# Default Priority Table for COCO & obstacle navigation classes
-PRIORITY_TABLE: Dict[str, int] = {
-    "person": 10,
-    "bicycle": 9,
-    "motorcycle": 9,
-    "car": 8,
-    "bus": 8,
-    "truck": 8,
-    "chair": 7,
-    "table": 6,
-    "dining table": 6,
-    "bench": 5,
-    "traffic light": 4,
-    "stop sign": 4,
-    "fire hydrant": 4,
-    "trash can": 4,
-    "waste container": 4,
-    "garbage can": 4,
-    "bin": 4,
-    "door": 4,
-    "backpack": 2,
-    "suitcase": 2,
-    "bottle": 1,
-    "cup": 1,
-}
+from priority_table import PRIORITY_TABLE, DEFAULT_PRIORITY
 
 
 @dataclass
@@ -126,9 +100,9 @@ class ObjectAnalyzer:
             else:
                 pos = "RIGHT"
 
-            # 2. Lookup priority from PRIORITY_TABLE (default 0 for unknown classes)
+            # 2. Lookup priority from PRIORITY_TABLE (default DEFAULT_PRIORITY for unknown classes)
             cls_lower = obj.class_name.lower().strip()
-            prio = self.priority_table.get(cls_lower, 0)
+            prio = self.priority_table.get(cls_lower, DEFAULT_PRIORITY)
 
             # 3. Create AnalyzedObject
             analyzed_list.append(AnalyzedObject.from_detected_object(obj, pos, prio))
