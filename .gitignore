@@ -113,3 +113,5 @@ local.properties
 *.apk
 *.aab
 *.keystore
+
+yolov8n.pt
