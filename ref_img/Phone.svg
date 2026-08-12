@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500" width="100%" height="100%">
+  <defs>
+    <!-- Background / Phone Body Gradient -->
+    <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2a2d32"/>
+      <stop offset="50%" stop-color="#1f2124"/>
+      <stop offset="100%" stop-color="#141517"/>
+    </linearGradient>
+
+    <!-- Outer Frame Metallic Edge -->
+    <linearGradient id="frameGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#60656c"/>
+      <stop offset="50%" stop-color="#3a3d42"/>
+      <stop offset="100%" stop-color="#1a1b1d"/>
+    </linearGradient>
+
+    <!-- Camera Bump Gradient -->
+    <linearGradient id="bumpGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2e3137"/>
+      <stop offset="100%" stop-color="#1a1b1e"/>
+    </linearGradient>
+
+    <!-- Lens Ring Metallic Gradient -->
+    <linearGradient id="lensRingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f545c"/>
+      <stop offset="100%" stop-color="#111214"/>
+    </linearGradient>
+
+    <!-- Lens Glass Reflection -->
+    <radialGradient id="lensGlass" cx="40%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#1a2536"/>
+      <stop offset="70%" stop-color="#080a0f"/>
+      <stop offset="100%" stop-color="#020305"/>
+    </radialGradient>
+
+    <!-- Inner Blue Sensor Highlight -->
+    <radialGradient id="sensorGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#4aa3ff" stop-opacity="0.8"/>
+      <stop offset="40%" stop-color="#0055b3" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Subtle Drop Shadow for Camera Bump -->
+    <filter id="dropShadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="-2" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+
+  <!-- Canvas Dark Background -->
+  <rect width="1000" height="500" fill="#0d0e10"/>
+
+  <g transform="translate(100, 100)">
+    <!-- Side Buttons (Top and Bottom edges) -->
+    <rect x="600" y="-3" width="70" height="4" rx="2" fill="#4a4e54"/>
+    <rect x="620" y="299" width="50" height="4" rx="2" fill="#3a3d42"/>
+    <rect x="680" y="299" width="50" height="4" rx="2" fill="#3a3d42"/>
+
+    <!-- Antenna Bands -->
+    <rect x="80" y="-1" width="4" height="302" fill="#111214"/>
+    <rect x="716" y="-1" width="4" height="302" fill="#111214"/>
+
+    <!-- Outer Phone Bezel / Frame -->
+    <rect x="0" y="0" width="800" height="300" rx="48" fill="url(#frameGrad)" stroke="#484c52" stroke-width="1.5"/>
+
+    <!-- Main Back Glass Body -->
+    <rect x="4" y="4" width="792" height="292" rx="44" fill="url(#bodyGrad)"/>
+
+    <!-- Corner White Accent Lines (Glyph Style Elements) -->
+    <path d="M 45 90 L 45 45 L 90 45" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+    <path d="M 45 210 L 45 255 L 90 255" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+    <path d="M 755 210 L 755 255 L 710 255" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+
+    <!-- Camera Bump Module -->
+    <g filter="url(#dropShadow)">
+      <rect x="625" y="25" width="140" height="140" rx="36" fill="url(#bumpGrad)" stroke="#383c42" stroke-width="1.5"/>
+    </g>
+
+    <!-- Camera Lens 1 (Left) -->
+    <g transform="translate(662, 60)">
+      <circle cx="0" cy="0" r="28" fill="url(#lensRingGrad)" stroke="#2d3035" stroke-width="1"/>
+      <circle cx="0" cy="0" r="24" fill="#0a0b0d"/>
+      <circle cx="0" cy="0" r="20" fill="url(#lensGlass)"/>
+      <circle cx="0" cy="0" r="8" fill="url(#sensorGlow)"/>
+      <circle cx="-1" cy="-1" r="3" fill="#001122"/>
+      <!-- Lens Glare Reflection -->
+      <ellipse cx="-7" cy="-7" rx="5" ry="2.5" fill="#ffffff" opacity="0.25" transform="rotate(-30 -7 -7)"/>
+    </g>
+
+    <!-- Camera Lens 2 (Right) -->
+    <g transform="translate(728, 60)">
+      <circle cx="0" cy="0" r="28" fill="url(#lensRingGrad)" stroke="#2d3035" stroke-width="1"/>
+      <circle cx="0" cy="0" r="24" fill="#0a0b0d"/>
+      <circle cx="0" cy="0" r="20" fill="url(#lensGlass)"/>
+      <circle cx="0" cy="0" r="8" fill="url(#sensorGlow)"/>
+      <circle cx="-1" cy="-1" r="3" fill="#001122"/>
+      <!-- Lens Glare Reflection -->
+      <ellipse cx="-7" cy="-7" rx="5" ry="2.5" fill="#ffffff" opacity="0.25" transform="rotate(-30 -7 -7)"/>
+    </g>
+
+    <!-- Flashlight Module (Off/Cleaned up) -->
+    <g transform="translate(695, 122)">
+      <circle cx="0" cy="0" r="12" fill="#1a1c1f" stroke="#2a2d32" stroke-width="1"/>
+      <circle cx="0" cy="0" r="9" fill="#fceabb" opacity="0.7"/>
+      <circle cx="0" cy="0" r="5" fill="#fff" opacity="0.9"/>
+    </g>
+
+    <!-- Small Mic Hole near Flash -->
+    <circle cx="732" cy="122" r="2.5" fill="#090a0b"/>
+  </g>
+</svg>
