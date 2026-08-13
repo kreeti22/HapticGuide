@@ -1,110 +1,217 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500" width="100%" height="100%">
   <defs>
-    <!-- Background / Phone Body Gradient -->
+    <!-- Frosted glass back panel -->
     <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#2a2d32"/>
-      <stop offset="50%" stop-color="#1f2124"/>
-      <stop offset="100%" stop-color="#141517"/>
+      <stop offset="0%"  stop-color="#34383e"/>
+      <stop offset="35%" stop-color="#24262a"/>
+      <stop offset="65%" stop-color="#1a1c1f"/>
+      <stop offset="100%" stop-color="#0f1012"/>
     </linearGradient>
 
-    <!-- Outer Frame Metallic Edge -->
+    <!-- soft single-source light highlight (upper-left), replacing the diagonal streak -->
+    <radialGradient id="glassSheen" cx="26%" cy="20%" r="65%">
+      <stop offset="0%"   stop-color="#ffffff" stop-opacity=".16"/>
+      <stop offset="35%"  stop-color="#ffffff" stop-opacity=".05"/>
+      <stop offset="70%"  stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity=".08"/>
+    </radialGradient>
+
+    <!-- brushed-metal outer frame -->
     <linearGradient id="frameGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#60656c"/>
-      <stop offset="50%" stop-color="#3a3d42"/>
-      <stop offset="100%" stop-color="#1a1b1d"/>
-    </linearGradient>
-
-    <!-- Camera Bump Gradient -->
-    <linearGradient id="bumpGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#2e3137"/>
-      <stop offset="100%" stop-color="#1a1b1e"/>
-    </linearGradient>
-
-    <!-- Lens Ring Metallic Gradient -->
-    <linearGradient id="lensRingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#4f545c"/>
+      <stop offset="0%"   stop-color="#8b8f95"/>
+      <stop offset="8%"   stop-color="#5b5f65"/>
+      <stop offset="50%"  stop-color="#333539"/>
+      <stop offset="92%"  stop-color="#4a4d52"/>
       <stop offset="100%" stop-color="#111214"/>
     </linearGradient>
 
-    <!-- Lens Glass Reflection -->
-    <radialGradient id="lensGlass" cx="40%" cy="40%" r="60%">
-      <stop offset="0%" stop-color="#1a2536"/>
-      <stop offset="70%" stop-color="#080a0f"/>
-      <stop offset="100%" stop-color="#020305"/>
+    <linearGradient id="frameEdgeHighlight" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#ffffff" stop-opacity=".55"/>
+      <stop offset="12%"  stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="88%"  stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity=".18"/>
+    </linearGradient>
+
+    <!-- camera bump -->
+    <linearGradient id="bumpGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#3d4147"/>
+      <stop offset="45%"  stop-color="#212327"/>
+      <stop offset="100%" stop-color="#101113"/>
+    </linearGradient>
+
+    <linearGradient id="bumpTopSheen" x1="0%" y1="0%" x2="0%" y2="1">
+      <stop offset="0%"  stop-color="#ffffff" stop-opacity=".22"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- lens ring -->
+    <linearGradient id="lensRingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#6b7078"/>
+      <stop offset="45%"  stop-color="#2c2f34"/>
+      <stop offset="100%" stop-color="#0a0b0d"/>
+    </linearGradient>
+
+    <!-- lens glass, deep refractive look -->
+    <radialGradient id="lensGlass" cx="38%" cy="35%" r="65%">
+      <stop offset="0%"  stop-color="#2c4460"/>
+      <stop offset="30%" stop-color="#152234"/>
+      <stop offset="65%" stop-color="#080a0f"/>
+      <stop offset="100%" stop-color="#010102"/>
     </radialGradient>
 
-    <!-- Inner Blue Sensor Highlight -->
     <radialGradient id="sensorGlow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#4aa3ff" stop-opacity="0.8"/>
-      <stop offset="40%" stop-color="#0055b3" stop-opacity="0.4"/>
+      <stop offset="0%"  stop-color="#4aa3ff" stop-opacity="0.75"/>
+      <stop offset="40%" stop-color="#0055b3" stop-opacity="0.35"/>
       <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
     </radialGradient>
 
-    <!-- Subtle Drop Shadow for Camera Bump -->
-    <filter id="dropShadow" x="-10%" y="-10%" width="130%" height="130%">
-      <feDropShadow dx="-2" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.6"/>
+    <!-- flashlight warm LED -->
+    <radialGradient id="flashGlow" cx="45%" cy="40%" r="65%">
+      <stop offset="0%"  stop-color="#fff6df"/>
+      <stop offset="45%" stop-color="#ffd98a"/>
+      <stop offset="100%" stop-color="#b98d3f"/>
+    </radialGradient>
+
+    <radialGradient id="flashHalo" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#ffdb9a" stop-opacity=".45"/>
+      <stop offset="100%" stop-color="#ffdb9a" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="buttonGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#7b7f85"/>
+      <stop offset="50%" stop-color="#3c3f44"/>
+      <stop offset="100%" stop-color="#1c1d1f"/>
+    </linearGradient>
+
+    <!-- fine matte grain for the glass back -->
+    <filter id="grain" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="4" result="n"/>
+      <feColorMatrix in="n" type="matrix"
+        values="0 0 0 0 0
+                0 0 0 0 0
+                0 0 0 0 0
+                0 0 0 0.06 0" result="softN"/>
+      <feComposite in="softN" in2="SourceGraphic" operator="in" result="grain"/>
+      <feBlend in="SourceGraphic" in2="grain" mode="multiply"/>
     </filter>
+
+    <!-- directional brushed-metal streaks for the frame -->
+    <filter id="brushed" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.012 0.35" numOctaves="2" seed="9" result="n"/>
+      <feColorMatrix in="n" type="matrix"
+        values="0 0 0 0 0
+                0 0 0 0 0
+                0 0 0 0 0
+                0 0 0 0.10 0" result="softN"/>
+      <feComposite in="softN" in2="SourceGraphic" operator="in" result="grain"/>
+      <feBlend in="SourceGraphic" in2="grain" mode="multiply"/>
+    </filter>
+
+    <!-- larger blotchy variation for smudge/oil-residue look on glass -->
+    <filter id="smudgeNoise" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.006" numOctaves="3" seed="22" result="n"/>
+      <feColorMatrix in="n" type="matrix"
+        values="0 0 0 0 1
+                0 0 0 0 1
+                0 0 0 0 1
+                0 0 0 0.05 0"/>
+    </filter>
+
+    <filter id="dropShadow" x="-20%" y="-20%" width="150%" height="150%">
+      <feDropShadow dx="-2" dy="5" stdDeviation="7" flood-color="#000000" flood-opacity="0.65"/>
+    </filter>
+
+    <filter id="softBlur3"><feGaussianBlur stdDeviation="3"/></filter>
+    <filter id="softBlur10"><feGaussianBlur stdDeviation="10"/></filter>
   </defs>
 
-  <!-- Canvas Dark Background -->
+  <!-- Canvas -->
   <rect width="1000" height="500" fill="#0d0e10"/>
 
-  <g transform="translate(100, 100)">
-    <!-- Side Buttons (Top and Bottom edges) -->
-    <rect x="600" y="-3" width="70" height="4" rx="2" fill="#4a4e54"/>
-    <rect x="620" y="299" width="50" height="4" rx="2" fill="#3a3d42"/>
-    <rect x="680" y="299" width="50" height="4" rx="2" fill="#3a3d42"/>
+  <!-- ground contact shadow -->
+  <ellipse cx="500" cy="430" rx="360" ry="30" fill="#000" opacity=".5" filter="url(#softBlur10)"/>
+
+  <g transform="translate(100, 100)" filter="url(#dropShadow)">
+
+    <!-- Side Buttons -->
+    <rect x="600" y="-4" width="70" height="5" rx="2.5" fill="url(#buttonGrad)"/>
+    <rect x="620" y="299" width="50" height="5" rx="2.5" fill="url(#buttonGrad)"/>
+    <rect x="680" y="299" width="50" height="5" rx="2.5" fill="url(#buttonGrad)"/>
 
     <!-- Antenna Bands -->
-    <rect x="80" y="-1" width="4" height="302" fill="#111214"/>
-    <rect x="716" y="-1" width="4" height="302" fill="#111214"/>
+    <rect x="79" y="-1" width="5" height="302" fill="#0a0b0c"/>
+    <rect x="79" y="-1" width="1.4" height="302" fill="#7a7e84" opacity=".6"/>
+    <rect x="716" y="-1" width="5" height="302" fill="#0a0b0c"/>
+    <rect x="716" y="-1" width="1.4" height="302" fill="#7a7e84" opacity=".6"/>
 
-    <!-- Outer Phone Bezel / Frame -->
-    <rect x="0" y="0" width="800" height="300" rx="48" fill="url(#frameGrad)" stroke="#484c52" stroke-width="1.5"/>
+    <!-- Outer Frame -->
+    <rect x="0" y="0" width="800" height="300" rx="48" fill="url(#frameGrad)" filter="url(#brushed)"/>
+    <rect x="0" y="0" width="800" height="300" rx="48" fill="none" stroke="url(#frameEdgeHighlight)" stroke-width="2"/>
+    <rect x="0" y="0" width="800" height="300" rx="48" fill="none" stroke="#000" stroke-width="1" opacity=".4"/>
 
-    <!-- Main Back Glass Body -->
-    <rect x="4" y="4" width="792" height="292" rx="44" fill="url(#bodyGrad)"/>
+    <!-- Main Back Glass -->
+    <rect x="5" y="5" width="790" height="290" rx="43" fill="url(#bodyGrad)" filter="url(#grain)"/>
+    <rect x="5" y="5" width="790" height="290" rx="43" fill="url(#glassSheen)"/>
+    <!-- faint oily fingerprint/smudge residue -->
+    <rect x="5" y="5" width="790" height="290" rx="43" fill="#ffffff" filter="url(#smudgeNoise)" opacity=".5"/>
+    <!-- a couple of soft thumbprint-like smudges -->
+    <ellipse cx="230" cy="210" rx="46" ry="34" fill="#ffffff" opacity=".025" filter="url(#softBlur10)"/>
+    <ellipse cx="560" cy="230" rx="60" ry="30" fill="#ffffff" opacity=".02" filter="url(#softBlur10)"/>
+    <rect x="5" y="5" width="790" height="290" rx="43" fill="none" stroke="#000" stroke-width="1" opacity=".5"/>
 
-    <!-- Corner White Accent Lines (Glyph Style Elements) -->
-    <path d="M 45 90 L 45 45 L 90 45" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
-    <path d="M 45 210 L 45 255 L 90 255" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
-    <path d="M 755 210 L 755 255 L 710 255" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+    <!-- soft top-edge glass highlight -->
+    <path d="M40 8 Q400 -6 760 8" fill="none" stroke="#ffffff" stroke-width="10" opacity=".05" filter="url(#softBlur3)"/>
+
+    <!-- micro-scratches, very faint, catching the light at random angles -->
+    <g stroke="#ffffff" stroke-linecap="round" opacity=".06">
+      <line x1="120" y1="60" x2="180" y2="52"/>
+      <line x1="500" y1="240" x2="440" y2="255"/>
+      <line x1="350" y1="30" x2="410" y2="24"/>
+      <line x1="620" y1="270" x2="670" y2="260"/>
+    </g>
 
     <!-- Camera Bump Module -->
-    <g filter="url(#dropShadow)">
-      <rect x="625" y="25" width="140" height="140" rx="36" fill="url(#bumpGrad)" stroke="#383c42" stroke-width="1.5"/>
+    <g>
+      <rect x="625" y="25" width="140" height="140" rx="36" fill="url(#bumpGrad)" stroke="#050506" stroke-width="2"/>
+      <rect x="627" y="27" width="136" height="60" rx="30" fill="url(#bumpTopSheen)"/>
+      <rect x="625" y="25" width="140" height="140" rx="36" fill="none" stroke="#54585e" stroke-width="1" opacity=".5"/>
     </g>
 
     <!-- Camera Lens 1 (Left) -->
     <g transform="translate(662, 60)">
-      <circle cx="0" cy="0" r="28" fill="url(#lensRingGrad)" stroke="#2d3035" stroke-width="1"/>
-      <circle cx="0" cy="0" r="24" fill="#0a0b0d"/>
+      <circle cx="0" cy="0" r="29" fill="#000" opacity=".4" filter="url(#softBlur3)"/>
+      <circle cx="0" cy="0" r="28" fill="url(#lensRingGrad)" stroke="#050506" stroke-width="1.5"/>
+      <circle cx="0" cy="0" r="24" fill="#08090b"/>
       <circle cx="0" cy="0" r="20" fill="url(#lensGlass)"/>
       <circle cx="0" cy="0" r="8" fill="url(#sensorGlow)"/>
-      <circle cx="-1" cy="-1" r="3" fill="#001122"/>
-      <!-- Lens Glare Reflection -->
-      <ellipse cx="-7" cy="-7" rx="5" ry="2.5" fill="#ffffff" opacity="0.25" transform="rotate(-30 -7 -7)"/>
+      <circle cx="-1" cy="-1" r="3" fill="#000814"/>
+      <ellipse cx="-7" cy="-7" rx="5" ry="2.4" fill="#ffffff" opacity="0.3" transform="rotate(-30 -7 -7)"/>
+      <ellipse cx="8" cy="10" rx="10" ry="3" fill="#ffffff" opacity="0.05" transform="rotate(30 8 10)"/>
     </g>
 
     <!-- Camera Lens 2 (Right) -->
     <g transform="translate(728, 60)">
-      <circle cx="0" cy="0" r="28" fill="url(#lensRingGrad)" stroke="#2d3035" stroke-width="1"/>
-      <circle cx="0" cy="0" r="24" fill="#0a0b0d"/>
+      <circle cx="0" cy="0" r="29" fill="#000" opacity=".4" filter="url(#softBlur3)"/>
+      <circle cx="0" cy="0" r="28" fill="url(#lensRingGrad)" stroke="#050506" stroke-width="1.5"/>
+      <circle cx="0" cy="0" r="24" fill="#08090b"/>
       <circle cx="0" cy="0" r="20" fill="url(#lensGlass)"/>
       <circle cx="0" cy="0" r="8" fill="url(#sensorGlow)"/>
-      <circle cx="-1" cy="-1" r="3" fill="#001122"/>
-      <!-- Lens Glare Reflection -->
-      <ellipse cx="-7" cy="-7" rx="5" ry="2.5" fill="#ffffff" opacity="0.25" transform="rotate(-30 -7 -7)"/>
+      <circle cx="-1" cy="-1" r="3" fill="#000814"/>
+      <ellipse cx="-7" cy="-7" rx="5" ry="2.4" fill="#ffffff" opacity="0.3" transform="rotate(-30 -7 -7)"/>
+      <ellipse cx="8" cy="10" rx="10" ry="3" fill="#ffffff" opacity="0.05" transform="rotate(30 8 10)"/>
     </g>
 
-    <!-- Flashlight Module (Off/Cleaned up) -->
+    <!-- Flashlight Module -->
     <g transform="translate(695, 122)">
-      <circle cx="0" cy="0" r="12" fill="#1a1c1f" stroke="#2a2d32" stroke-width="1"/>
-      <circle cx="0" cy="0" r="9" fill="#fceabb" opacity="0.7"/>
-      <circle cx="0" cy="0" r="5" fill="#fff" opacity="0.9"/>
+      <circle cx="0" cy="0" r="18" fill="url(#flashHalo)"/>
+      <circle cx="0" cy="0" r="12" fill="#131416" stroke="#050506" stroke-width="1.5"/>
+      <circle cx="0" cy="0" r="9" fill="url(#flashGlow)" opacity="0.85"/>
+      <circle cx="-2" cy="-2" r="3" fill="#ffffff" opacity="0.7"/>
     </g>
 
-    <!-- Small Mic Hole near Flash -->
-    <circle cx="732" cy="122" r="2.5" fill="#090a0b"/>
+    <!-- Mic Hole -->
+    <circle cx="732" cy="122" r="2.5" fill="#050506"/>
+    <circle cx="732" cy="122" r="2.5" fill="none" stroke="#3a3d42" stroke-width=".5"/>
+
   </g>
 </svg>
