@@ -1,0 +1,56 @@
+<svg
+  id="haptic-motor"
+  width="120"
+  height="80"
+  viewBox="0 0 120 80"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <defs>
+    <linearGradient id="motorBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3b3b3b"/>
+      <stop offset="45%" stop-color="#1f1f1f"/>
+      <stop offset="100%" stop-color="#0c0c0c"/>
+    </linearGradient>
+    <linearGradient id="motorTop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#666"/>
+      <stop offset="45%" stop-color="#303030"/>
+      <stop offset="100%" stop-color="#151515"/>
+    </linearGradient>
+    <filter id="motorShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+  </defs>
+
+  <rect x="18" y="24" width="84" height="38" rx="12" fill="#000" opacity=".55" filter="url(#motorShadow)"/>
+
+  <path
+    id="motor-mount"
+    d="M27 48 L27 60 Q27 68 35 68 H85 Q93 68 93 60 V48"
+    fill="#151515"
+    stroke="#555"
+    stroke-width="2"
+  />
+
+  <rect id="motor-body" x="15" y="12" width="90" height="43" rx="13" fill="url(#motorBody)" stroke="#777" stroke-width="2"/>
+
+  <path
+    d="M28 17 H92 Q99 17 99 25 V29 H21 V25 Q21 17 28 17 Z"
+    fill="url(#motorTop)"
+    opacity=".8"
+  />
+
+  <circle id="motor-actuator" cx="60" cy="36" r="10" fill="#090909" stroke="#777" stroke-width="2"/>
+  <circle cx="60" cy="36" r="4" fill="#bdbdbd" opacity=".7"/>
+
+  <circle id="motor-led" cx="88" cy="25" r="3" fill="#222"/>
+
+  <g id="vibration-left" fill="none" stroke="#42a5ff" stroke-width="2" opacity="0">
+    <path d="M10 23 Q2 36 10 49"/>
+    <path d="M5 17 Q-7 36 5 55"/>
+  </g>
+
+  <g id="vibration-right" fill="none" stroke="#42a5ff" stroke-width="2" opacity="0">
+    <path d="M110 23 Q118 36 110 49"/>
+    <path d="M115 17 Q127 36 115 55"/>
+  </g>
+</svg>

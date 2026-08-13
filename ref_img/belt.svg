@@ -1,0 +1,199 @@
+<svg width="1200" height="430" viewBox="0 0 1200 430"
+     xmlns="http://www.w3.org/2000/svg">
+
+  <defs>
+    <!-- Fabric gradient -->
+    <linearGradient id="fabric" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f5f5f2"/>
+      <stop offset="45%" stop-color="#d9d9d5"/>
+      <stop offset="100%" stop-color="#bdbdb9"/>
+    </linearGradient>
+
+    <!-- Fabric highlight -->
+    <linearGradient id="fabricHighlight" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity=".15"/>
+      <stop offset="50%" stop-color="#ffffff" stop-opacity=".45"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity=".10"/>
+    </linearGradient>
+
+    <!-- Buckle metal -->
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#eeeeea"/>
+      <stop offset="35%" stop-color="#aaa9a5"/>
+      <stop offset="70%" stop-color="#777773"/>
+      <stop offset="100%" stop-color="#4d4d4a"/>
+    </linearGradient>
+
+    <linearGradient id="metalInner" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d8d8d4"/>
+      <stop offset="100%" stop-color="#8c8c88"/>
+    </linearGradient>
+
+    <!-- Soft shadow -->
+    <filter id="shadow" x="-30%" y="-50%" width="160%" height="200%">
+      <feGaussianBlur stdDeviation="13"/>
+    </filter>
+  </defs>
+
+
+  <!-- Ground shadow -->
+  <path
+    d="M95 285
+       C250 355 950 355 1105 285
+       C1040 370 250 370 95 285Z"
+    fill="#000"
+    opacity=".55"
+    filter="url(#shadow)"
+  />
+
+
+  <!-- BACK/UPPER LOOP OF BELT -->
+  <path
+    d="
+      M82 150
+      C125 72 325 35 600 35
+      C875 35 1075 72 1118 150
+
+      L1087 198
+
+      C1035 130 850 105 600 105
+      C350 105 165 130 113 198
+      Z
+    "
+    fill="url(#fabric)"
+    stroke="#f7f7f4"
+    stroke-width="4"
+  />
+
+
+  <!-- Main front belt -->
+  <path
+    d="
+      M82 150
+      C155 205 325 235 600 235
+      C875 235 1045 205 1118 150
+
+      L1087 285
+
+      C1000 330 825 350 600 350
+      C375 350 200 330 113 285
+      Z
+    "
+    fill="url(#fabric)"
+    stroke="#eeeeeb"
+    stroke-width="4"
+  />
+
+
+  <!-- Front belt highlight -->
+  <path
+    d="
+      M102 169
+      C190 218 350 245 600 245
+      C850 245 1010 218 1098 169
+    "
+    fill="none"
+    stroke="url(#fabricHighlight)"
+    stroke-width="18"
+    opacity=".65"
+  />
+
+
+  <!-- Lower edge shadow -->
+  <path
+    d="
+      M113 285
+      C210 327 385 345 600 345
+      C815 345 990 327 1087 285
+    "
+    fill="none"
+    stroke="#777773"
+    stroke-width="8"
+    opacity=".35"
+  />
+
+
+  <!-- BUCKLE -->
+  <g>
+
+    <!-- Outer buckle -->
+    <rect
+      x="480"
+      y="205"
+      width="240"
+      height="125"
+      rx="25"
+      fill="url(#metal)"
+      stroke="#30302e"
+      stroke-width="7"
+    />
+
+    <!-- Inner buckle opening -->
+    <rect
+      x="505"
+      y="228"
+      width="190"
+      height="79"
+      rx="12"
+      fill="#171716"
+      stroke="#6c6c68"
+      stroke-width="5"
+    />
+
+    <!-- Inner metal reflection -->
+    <rect
+      x="512"
+      y="235"
+      width="176"
+      height="65"
+      rx="9"
+      fill="url(#metalInner)"
+      opacity=".30"
+    />
+
+    <!-- Buckle frame highlight -->
+    <path
+      d="M505 250
+         Q505 228 528 228
+         H670"
+      fill="none"
+      stroke="#ffffff"
+      stroke-width="5"
+      opacity=".35"
+      stroke-linecap="round"
+    />
+
+    <!-- Buckle pin -->
+    <path
+      d="
+        M600 246
+        L600 291
+        Q600 300 609 300
+        H656
+      "
+      fill="none"
+      stroke="#c6c6c2"
+      stroke-width="10"
+      stroke-linecap="round"
+    />
+
+    <circle
+      cx="655"
+      cy="300"
+      r="5"
+      fill="#eeeeea"
+    />
+
+  </g>
+
+
+  <!-- Small belt holes -->
+  <g fill="#6f6f6b" opacity=".75">
+    <circle cx="760" cy="285" r="5"/>
+    <circle cx="790" cy="281" r="5"/>
+    <circle cx="820" cy="276" r="5"/>
+    <circle cx="850" cy="270" r="5"/>
+    <circle cx="880" cy="264" r="5"/>
+  </g>
+
+</svg>
