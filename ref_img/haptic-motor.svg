@@ -6,51 +6,143 @@
   xmlns="http://www.w3.org/2000/svg"
 >
   <defs>
+    <!-- graphite housing, lit from top -->
     <linearGradient id="motorBody" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#3b3b3b"/>
-      <stop offset="45%" stop-color="#1f1f1f"/>
-      <stop offset="100%" stop-color="#0c0c0c"/>
+      <stop offset="0%"  stop-color="#5a5a5a"/>
+      <stop offset="20%" stop-color="#333333"/>
+      <stop offset="55%" stop-color="#1c1c1c"/>
+      <stop offset="85%" stop-color="#0e0e0e"/>
+      <stop offset="100%" stop-color="#050505"/>
     </linearGradient>
-    <linearGradient id="motorTop" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#666"/>
-      <stop offset="45%" stop-color="#303030"/>
-      <stop offset="100%" stop-color="#151515"/>
+
+    <!-- rim light that traces the curved top edge -->
+    <linearGradient id="rimLight" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"   stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="15%"  stop-color="#c9c9c9" stop-opacity=".8"/>
+      <stop offset="50%"  stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="85%"  stop-color="#c9c9c9" stop-opacity=".8"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
-    <filter id="motorShadow" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="3"/>
+
+    <!-- brushed metal ring around actuator -->
+    <radialGradient id="actuatorRing" cx="35%" cy="30%" r="75%">
+      <stop offset="0%"  stop-color="#9a9a9a"/>
+      <stop offset="35%" stop-color="#4d4d4d"/>
+      <stop offset="70%" stop-color="#232323"/>
+      <stop offset="100%" stop-color="#050505"/>
+    </radialGradient>
+
+    <radialGradient id="actuatorFace" cx="40%" cy="35%" r="70%">
+      <stop offset="0%"  stop-color="#e8e8e8"/>
+      <stop offset="50%" stop-color="#9c9c9c"/>
+      <stop offset="100%" stop-color="#5c5c5c"/>
+    </radialGradient>
+
+    <radialGradient id="ledOff" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#3a3a3a"/>
+      <stop offset="100%" stop-color="#0a0a0a"/>
+    </radialGradient>
+
+    <!-- contact shadow that blends the curved base into whatever it sits on -->
+    <radialGradient id="contactShadow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#000000" stop-opacity=".65"/>
+      <stop offset="60%" stop-color="#000000" stop-opacity=".25"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="clipMetal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#3a3a3a"/>
+      <stop offset="100%" stop-color="#0a0a0a"/>
+    </linearGradient>
+
+    <filter id="shadowBlur" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="3.5"/>
+    </filter>
+
+    <filter id="bodyBlur" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="1.4"/>
     </filter>
   </defs>
 
-  <rect x="18" y="24" width="84" height="38" rx="12" fill="#000" opacity=".55" filter="url(#motorShadow)"/>
+  <!-- ============ CONTACT / GROUND-CONFORMING SHADOW ============ -->
+  <!-- sits beneath the curved base so it visually presses into the surface it's mounted on -->
+  <ellipse id="motor-shadow" cx="60" cy="70" rx="52" ry="9" fill="url(#contactShadow)" filter="url(#shadowBlur)"/>
 
-  <path
-    id="motor-mount"
-    d="M27 48 L27 60 Q27 68 35 68 H85 Q93 68 93 60 V48"
-    fill="#151515"
-    stroke="#555"
-    stroke-width="2"
-  />
-
-  <rect id="motor-body" x="15" y="12" width="90" height="43" rx="13" fill="url(#motorBody)" stroke="#777" stroke-width="2"/>
-
-  <path
-    d="M28 17 H92 Q99 17 99 25 V29 H21 V25 Q21 17 28 17 Z"
-    fill="url(#motorTop)"
-    opacity=".8"
-  />
-
-  <circle id="motor-actuator" cx="60" cy="36" r="10" fill="#090909" stroke="#777" stroke-width="2"/>
-  <circle cx="60" cy="36" r="4" fill="#bdbdbd" opacity=".7"/>
-
-  <circle id="motor-led" cx="88" cy="25" r="3" fill="#222"/>
-
-  <g id="vibration-left" fill="none" stroke="#42a5ff" stroke-width="2" opacity="0">
-    <path d="M10 23 Q2 36 10 49"/>
-    <path d="M5 17 Q-7 36 5 55"/>
+  <!-- ============ MOUNTING CLIP ============ -->
+  <!-- wraps slightly around the underlying surface's edge, hinting it grips a curved strap -->
+  <g id="motor-mount">
+    <path d="M20 60 Q18 74 26 76 L34 76 Q28 70 30 60 Z" fill="url(#clipMetal)" stroke="#000" stroke-width="1"/>
+    <path d="M100 60 Q102 74 94 76 L86 76 Q92 70 90 60 Z" fill="url(#clipMetal)" stroke="#000" stroke-width="1"/>
   </g>
 
-  <g id="vibration-right" fill="none" stroke="#42a5ff" stroke-width="2" opacity="0">
-    <path d="M110 23 Q118 36 110 49"/>
-    <path d="M115 17 Q127 36 115 55"/>
+  <!-- ============ MAIN HOUSING — curved (saddle) profile ============ -->
+  <!-- top edge bows outward, bottom edge bows inward to conform to a convex curved surface beneath it -->
+  <path
+    id="motor-body"
+    d="
+      M18 20
+      Q60 9 102 20
+      L107 24
+      Q112 28 112 34
+      L112 52
+      Q112 58 107 62
+      L102 66
+      Q60 58 18 66
+      L13 62
+      Q8 58 8 52
+      L8 34
+      Q8 28 13 24
+      Z
+    "
+    fill="url(#motorBody)"
+    stroke="#000"
+    stroke-width="1.5"
+  />
+
+  <!-- rim light tracing the curved top edge -->
+  <path
+    d="M18 20 Q60 9 102 20"
+    fill="none"
+    stroke="url(#rimLight)"
+    stroke-width="1.6"
+    opacity=".9"
+  />
+
+  <!-- subtle inner shading following the curvature, for a wrapped/rounded feel -->
+  <path
+    d="M14 26 Q60 15 106 26 L106 32 Q60 22 14 32 Z"
+    fill="#ffffff"
+    opacity=".05"
+    filter="url(#bodyBlur)"
+  />
+  <path
+    d="M16 58 Q60 50 104 58 L104 62 Q60 55 16 62 Z"
+    fill="#000000"
+    opacity=".35"
+    filter="url(#bodyBlur)"
+  />
+
+  <!-- corner screws for realism -->
+  <circle cx="22" cy="30" r="2.3" fill="#2b2b2b" stroke="#666" stroke-width=".6"/>
+  <circle cx="98" cy="30" r="2.3" fill="#2b2b2b" stroke="#666" stroke-width=".6"/>
+
+  <!-- ============ CENTRAL VIBRATION ACTUATOR ============ -->
+  <circle id="motor-actuator" cx="60" cy="40" r="12" fill="url(#actuatorRing)" stroke="#000" stroke-width="1"/>
+  <circle cx="60" cy="40" r="6.5" fill="url(#actuatorFace)"/>
+  <circle cx="57.5" cy="37" r="1.6" fill="#ffffff" opacity=".6"/>
+
+  <!-- ============ STATUS LED ============ -->
+  <circle id="motor-led" cx="96" cy="22" r="3" fill="url(#ledOff)" stroke="#000" stroke-width=".6"/>
+
+  <!-- ============ VIBRATION WAVES (hidden by default) ============ -->
+  <g id="vibration-left" fill="none" stroke="#42a5ff" stroke-width="2" stroke-linecap="round" opacity="0">
+    <path d="M6 26 Q-3 40 6 54"/>
+    <path d="M0 20 Q-13 40 0 60"/>
   </g>
+
+  <g id="vibration-right" fill="none" stroke="#42a5ff" stroke-width="2" stroke-linecap="round" opacity="0">
+    <path d="M114 26 Q123 40 114 54"/>
+    <path d="M120 20 Q133 40 120 60"/>
+  </g>
+
 </svg>

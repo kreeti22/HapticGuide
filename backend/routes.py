@@ -11,15 +11,26 @@ Endpoints
 GET /cmd    — returns the latest motor command computed by the AI worker.
 GET /stats  — returns backend performance metrics and client connection telemetry.
 GET /health — liveness probe for monitoring tools / ESP32.
+GET /live   — real-time haptic belt visual dashboard.
 """
 
-from fastapi import APIRouter
+import base64
+import os
+from pathlib import Path
+
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.templating import Jinja2Templates
 
 from shared_state import stream_stats, frame_slot
 import globals
 
+
 router = APIRouter()
+
+# Jinja2 Templates Engine Configuration
+TEMPLATES_DIR = Path(__file__).parent / "templates"
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 # ---------------------------------------------------------------------------
@@ -28,18 +39,7 @@ router = APIRouter()
 
 @router.get("/cmd", response_class=JSONResponse)
 async def get_cmd() -> JSONResponse:
-    """
-    Return the latest motor command computed by the background AI worker.
-
-    Response shape
-    --------------
-    {
-        "left":  int,
-        "front": int,
-        "right": int,
-        "back":  int
-    }
-    """
+    """Return the latest motor command computed by the background AI worker."""
     with globals.command_lock:
         return JSONResponse(dict(globals.latest_command))
 
@@ -50,33 +50,13 @@ async def get_cmd() -> JSONResponse:
 
 @router.get("/stats", response_class=JSONResponse)
 async def get_stats() -> JSONResponse:
-    """
-    Return full backend performance metrics, client connection state, target, and command.
-
-    Response shape
-    --------------
-    {
-        "camera_fps":         float,
-        "yolo_fps":           float,
-        "current_target":     str | dict | None,
-        "current_command":    dict,
-        "frame_age":          float,
-        "frame_age_ms":       float,
-        "recv_fps":           float,
-        "ai_fps":             float,
-        "yolo_time_ms":       float,
-        "current_resolution": str,
-        "client_ip":          str,
-        "connected":          bool
-    }
-    """
+    """Return backend performance metrics, client connection state, target, and command."""
     s = stream_stats.snapshot()
     ai_s = globals.get_api_stats()
 
     with globals.command_lock:
         cmd = dict(globals.latest_command)
 
-    # Retrieve current target from computed globals or derive target position from latest_command
     target = getattr(globals, "latest_target", None)
     if target is None:
         active_pos = [k.upper() if k != "front" else "CENTER" for k, v in cmd.items() if v > 0]
@@ -108,16 +88,7 @@ async def get_stats() -> JSONResponse:
 
 @router.get("/health", response_class=JSONResponse)
 async def get_health() -> JSONResponse:
-    """
-    Liveness probe.
-
-    Response shape
-    --------------
-    {
-        "status":    "ok",
-        "connected": bool
-    }
-    """
+    """Liveness probe."""
     s = stream_stats.snapshot()
     return JSONResponse({
         "status":    "ok",
@@ -126,592 +97,206 @@ async def get_health() -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
-# GET /live  — real-time haptic belt dashboard
+# SVG Asset Loaders for Dashboard
+# Loads SVG assets directly from ref_img/ directory
 # ---------------------------------------------------------------------------
 
-_LIVE_HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HapticGuide — Live Dashboard</title>
-<style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
+def _load_svg_asset(filename: str) -> str:
+    """Read an SVG file from the ref_img directory."""
+    ref_dir = Path(__file__).parent.parent / "ref_img"
+    svg_path = ref_dir / filename
+    if svg_path.exists():
+        return svg_path.read_text(encoding="utf-8")
+    return ""
 
-body {
-  background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
-  min-height: 100vh;
-  color: #e8eaf6;
-  font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 32px 20px;
-  gap: 28px;
-  position: relative;
-  overflow-x: hidden;
-}
 
-body::before {
-  content: '';
-  position: fixed;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background:
-    radial-gradient(circle at 20% 30%, rgba(102, 126, 234, 0.15) 0%, transparent 50%),
-    radial-gradient(circle at 80% 70%, rgba(118, 75, 162, 0.12) 0%, transparent 50%);
-  pointer-events: none;
-  z-index: 0;
-}
+def _get_phone_svg() -> str:
+    raw = _load_svg_asset("Phone.svg")
+    if not raw:
+        return ""
+    # Make background transparent so it floats seamlessly on dark page
+    raw = raw.replace('fill="#0d0e10"', 'fill="none"')
+    
+    # Premium Physical Smartphone Material & Lighting Gradients matching ref_img/3.png
+    flash_defs = """
+    <!-- LAYER 1: Core Hotspot Spot -->
+    <radialGradient id="flashLayer1Core" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="45%" stop-color="#ffffff"/>
+      <stop offset="80%" stop-color="#fff8e1" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#ffe082" stop-opacity="0"/>
+    </radialGradient>
 
-h1 {
-  font-size: 1.5rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: #fff;
-  text-transform: uppercase;
-  text-shadow: 0 2px 20px rgba(124, 92, 255, 0.5);
-  z-index: 1;
-}
+    <!-- LAYER 2: Warm White Circular Bloom -->
+    <radialGradient id="flashLayer2Bloom" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fffdf5" stop-opacity="0.92"/>
+      <stop offset="35%" stop-color="#ffe082" stop-opacity="0.55"/>
+      <stop offset="70%" stop-color="#ffb74d" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#ff9800" stop-opacity="0"/>
+    </radialGradient>
 
-/* ===== Glassmorphism Status Banner ===== */
-#status-banner {
-  font-size: 1rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  padding: 14px 36px;
-  border-radius: 16px;
-  text-align: center;
-  min-width: 280px;
-  transition: all 0.25s ease;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  z-index: 1;
-}
+    <!-- LAYER 3: Volumetric Forward Light Scattering Falloff -->
+    <radialGradient id="flashLayer3Volumetric" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.65"/>
+      <stop offset="30%" stop-color="#ffe082" stop-opacity="0.32"/>
+      <stop offset="65%" stop-color="#ffa726" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#fb8c00" stop-opacity="0"/>
+    </radialGradient>
 
-#status-banner.safe {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.6);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-}
+    <!-- LAYER 4: Atmospheric Scattering Halo -->
+    <radialGradient id="flashLayer4Atmosphere" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fff8e1" stop-opacity="0.28"/>
+      <stop offset="50%" stop-color="#ffe082" stop-opacity="0.09"/>
+      <stop offset="100%" stop-color="#ffb74d" stop-opacity="0"/>
+    </radialGradient>
 
-#status-banner.active {
-  background: rgba(76, 175, 80, 0.12);
-  border: 1px solid rgba(76, 175, 80, 0.35);
-  color: #81c784;
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.3),
-    inset 0 0 20px rgba(76, 175, 80, 0.08),
-    0 0 30px rgba(76, 175, 80, 0.15);
-  animation: pulse-glow 2s ease-in-out infinite;
-}
+    <!-- Physical Glass Back Reflective Glare Overlay -->
+    <linearGradient id="glassReflectionGlare" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.25"/>
+      <stop offset="28%" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="60%" stop-color="#ffffff" stop-opacity="0.02"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
 
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), inset 0 0 20px rgba(76, 175, 80, 0.08), 0 0 30px rgba(76, 175, 80, 0.15); }
-  50% { box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), inset 0 0 20px rgba(76, 175, 80, 0.12), 0 0 50px rgba(76, 175, 80, 0.25); }
-}
+    <!-- Metallic Frame Highlight Gradient -->
+    <linearGradient id="phoneFrameMetallic" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.3"/>
+      <stop offset="30%" stop-color="#8a8a86" stop-opacity="0.15"/>
+      <stop offset="70%" stop-color="#2a2a28" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.2"/>
+    </linearGradient>
 
-/* ===== Curved Belt Container ===== */
-.belt-wrapper {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-}
+    <filter id="bloomGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="10" result="blur1"/>
+      <feGaussianBlur stdDeviation="20" result="blur2"/>
+      <feMerge>
+        <feMergeNode in="blur2"/>
+        <feMergeNode in="blur1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
 
-.belt-label {
-  font-size: 0.7rem;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.4);
-}
+    <filter id="outerVolumetricBlur" x="-150%" y="-150%" width="400%" height="400%">
+      <feGaussianBlur stdDeviation="35"/>
+    </filter>
+    """
 
-.belt-container {
-  position: relative;
-  width: 360px;
-  height: 220px;
-}
+    flash_elements = """
+    <!-- Premium Smartphone Glass & Atmospheric Flash Assembly -->
+    <g transform="translate(100, 100)" class="flashlight-forward-group">
+      
+      <!-- Metallic Frame Edge Highlight -->
+      <rect x="0" y="0" width="800" height="300" rx="40" fill="none" stroke="url(#phoneFrameMetallic)" stroke-width="2.5" opacity="0.8"/>
 
-/* The curved belt arc */
-.belt-arc {
-  position: absolute;
-  top: 20px;
-  left: 0;
-  width: 360px;
-  height: 200px;
-  border-top-left-radius: 200px 200px;
-  border-top-right-radius: 200px 200px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.03) 100%);
-  border: 2px solid rgba(255, 255, 255, 0.12);
-  border-bottom: none;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow:
-    inset 0 2px 20px rgba(255, 255, 255, 0.05),
-    0 10px 40px rgba(0, 0, 0, 0.3);
-}
+      <!-- Realistic Glass Back Glare Overlay -->
+      <path d="M 4 4 H 796 V 296 H 4 Z" fill="url(#glassReflectionGlare)" clip-path="url(#phoneClip)" opacity="0.85" style="mix-blend-mode: screen;"/>
 
-.belt-arc::before {
-  content: '';
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  right: 8px;
-  height: calc(100% - 8px);
-  border-top-left-radius: 192px 192px;
-  border-top-right-radius: 192px 192px;
-  border: 1.5px solid rgba(255, 255, 255, 0.08);
-  border-bottom: none;
-}
+      <!-- LAYER 4: Atmospheric Scattering Halo -->
+      <circle cx="695" cy="122" r="260" fill="url(#flashLayer4Atmosphere)" filter="url(#outerVolumetricBlur)" style="mix-blend-mode: screen;"/>
 
-/* Belt buckle / center indicator */
-.belt-center-line {
-  position: absolute;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 2px;
-  height: 30px;
-  background: linear-gradient(180deg, rgba(124, 92, 255, 0.8) 0%, transparent 100%);
-  border-radius: 2px;
-}
+      <!-- LAYER 3: Volumetric Forward Beam extending toward viewer -->
+      <circle cx="695" cy="122" r="140" fill="url(#flashLayer3Volumetric)" filter="url(#bloomGlow)" opacity="0.8" style="mix-blend-mode: screen;"/>
 
-/* Motor node base styling */
-.motor {
-  position: absolute;
-  width: 88px;
-  height: 88px;
-  border-radius: 50%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-weight: 700;
-  transition: all 0.2s ease;
-  user-select: none;
-  z-index: 2;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-}
+      <!-- LAYER 2: Warm White Circular Bloom around flash -->
+      <circle cx="695" cy="122" r="48" fill="url(#flashLayer2Bloom)" filter="url(#bloomGlow)" opacity="0.9" style="mix-blend-mode: screen;"/>
 
-.motor .motor-icon {
-  font-size: 1.3rem;
-  margin-bottom: 2px;
-  line-height: 1;
-}
+      <!-- Concentric Forward Lens Flare Rings -->
+      <circle cx="695" cy="122" r="24" fill="none" stroke="#fff8e1" stroke-width="1.5" opacity="0.4"/>
 
-.motor .pwm-val {
-  font-size: 0.85rem;
-  margin-top: 2px;
-  font-weight: 700;
-  font-family: 'Courier New', monospace;
-}
+      <!-- LAYER 1: Small Extremely Bright White Center -->
+      <circle cx="695" cy="122" r="14" fill="url(#flashLayer1Core)" filter="url(#bloomGlow)"/>
+      <circle cx="695" cy="122" r="6" fill="#ffffff"/>
+    </g>
+    """
 
-/* Motor positions along the curved arc */
-.motor.front {
-  top: -20px;
-  left: 50%;
-  transform: translateX(-50%);
-}
+    raw = raw.replace("</defs>", flash_defs + "\n</defs>")
+    raw = raw.replace("</svg>", flash_elements + "\n</svg>")
+    return raw
 
-.motor.left {
-  top: 85px;
-  left: 0px;
-  transform: rotate(-35deg);
-}
 
-.motor.left > * {
-  transform: rotate(35deg);
-}
+def _get_belt_svg() -> str:
+    raw = _load_svg_asset("belt.svg")
+    if not raw:
+        return ""
 
-.motor.right {
-  top: 85px;
-  right: 0px;
-  transform: rotate(35deg);
-}
+    # Remove L-shaped buckle pin & pin circle (preserving embedded native HG logo)
+    pin_target = """    <!-- Buckle pin -->
+    <path
+      d="
+        M600 246
+        L600 291
+        Q600 300 609 300
+        H656
+      "
+      fill="none"
+      stroke="#c6c6c2"
+      stroke-width="10"
+      stroke-linecap="round"
+    />
 
-.motor.right > * {
-  transform: rotate(-35deg);
-}
+    <circle
+      cx="655"
+      cy="300"
+      r="5"
+      fill="#eeeeea"
+    />"""
+    raw = raw.replace(pin_target, "")
 
-/* Inactive state */
-.motor.inactive {
-  background: rgba(255, 255, 255, 0.05);
-  border: 2px solid rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.3);
-  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.2);
-}
-.motor.inactive .pwm-val { color: rgba(255, 255, 255, 0.2); }
-.motor.inactive .motor-icon { opacity: 0.4; }
+    # Premium Fabric & Metallic Buckle Definitions (No duplicate HG text added)
+    texture_defs = """
+    <!-- Premium Woven Technical Textile Pattern -->
+    <pattern id="fabricWeavePattern" width="8" height="8" patternUnits="userSpaceOnUse">
+      <rect width="8" height="8" fill="#d2d2ce"/>
+      <path d="M 0 4 L 8 4 M 4 0 L 4 8" stroke="#a4a4a0" stroke-width="0.7" opacity="0.45"/>
+    </pattern>
 
-/* Active state */
-.motor.active {
-  background: rgba(76, 175, 80, 0.15);
-  border: 2px solid rgba(129, 199, 132, 0.5);
-  color: #a5d6a7;
-  box-shadow:
-    0 0 30px rgba(76, 175, 80, 0.4),
-    0 0 60px rgba(76, 175, 80, 0.2),
-    inset 0 0 20px rgba(76, 175, 80, 0.1);
-  animation: motor-pulse 1.5s ease-in-out infinite;
-}
-.motor.active .pwm-val { color: #c8e6c9; }
-.motor.active .motor-icon { color: #81c784; }
+    <!-- Warm Flash Reflection Overlay on Right Belt Strap -->
+    <radialGradient id="flashStrapReflect" cx="70%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#fff8e1" stop-opacity="0.25"/>
+      <stop offset="50%" stop-color="#ffe082" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#ffb74d" stop-opacity="0"/>
+    </radialGradient>
+    """
 
-@keyframes motor-pulse {
-  0%, 100% {
-    box-shadow:
-      0 0 30px rgba(76, 175, 80, 0.4),
-      0 0 60px rgba(76, 175, 80, 0.2),
-      inset 0 0 20px rgba(76, 175, 80, 0.1);
-  }
-  50% {
-    box-shadow:
-      0 0 45px rgba(76, 175, 80, 0.55),
-      0 0 80px rgba(76, 175, 80, 0.3),
-      inset 0 0 30px rgba(76, 175, 80, 0.15);
-  }
-}
+    belt_additions = """
+    <!-- Warm Flash Reflection on Right Belt Strap -->
+    <path d="M 600 241 C 850 241 1010 214 1098 165 L 1082 281 C 985 323 812 341 600 341 Z" fill="url(#flashStrapReflect)" style="mix-blend-mode: screen;"/>
+    """
 
-/* Direction labels below belt */
-.direction-labels {
-  display: flex;
-  justify-content: space-between;
-  width: 360px;
-  padding: 0 10px;
-  margin-top: 8px;
-}
+    raw = raw.replace("</defs>", texture_defs + "\n</defs>")
+    raw = raw.replace("</svg>", belt_additions + "\n</svg>")
+    return raw
 
-.direction-labels span {
-  font-size: 0.65rem;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.35);
-  font-weight: 600;
-}
 
-.direction-labels .center-label {
-  margin-right: 40px;
-}
+def _get_motor_svg(prefix: str) -> str:
+    raw = _load_svg_asset("haptic-motor.svg")
+    if not raw:
+        return ""
+    # Prefix IDs and url(# references to ensure uniqueness across left & right motor DOM instances
+    raw = raw.replace('id="', f'id="{prefix}_')
+    raw = raw.replace('url(#', f'url(#{prefix}_')
+    return raw
 
-/* ===== Glassmorphism Cards ===== */
-.cards {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  justify-content: center;
-  max-width: 640px;
-  width: 100%;
-  z-index: 1;
-}
 
-.card {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 18px;
-  padding: 18px 22px;
-  min-width: 170px;
-  flex: 1;
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  transition: all 0.3s ease;
-}
-
-.card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(124, 92, 255, 0.2);
-  box-shadow:
-    0 12px 40px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 0 30px rgba(124, 92, 255, 0.08);
-}
-
-.card .label {
-  font-size: 0.65rem;
-  color: rgba(255, 255, 255, 0.4);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  margin-bottom: 8px;
-  font-weight: 600;
-}
-
-.card .value {
-  font-size: 1.05rem;
-  color: #e8eaf6;
-  word-break: break-all;
-  font-weight: 500;
-}
-
-.card .value.highlight {
-  color: #7c8cff;
-  text-shadow: 0 0 20px rgba(124, 140, 255, 0.3);
-}
-
-/* ===== Glassmorphism PWM Table ===== */
-.pwm-table {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 18px;
-  padding: 18px 22px;
-  min-width: 240px;
-  flex: 1;
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.pwm-table .label {
-  font-size: 0.65rem;
-  color: rgba(255, 255, 255, 0.4);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  margin-bottom: 14px;
-  font-weight: 600;
-}
-
-.pwm-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.88rem;
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.pwm-row:last-child { border-bottom: none; }
-.pwm-row .motor-name { color: rgba(255, 255, 255, 0.6); font-weight: 500; }
-.pwm-row .motor-pwm  {
-  color: #e8eaf6;
-  font-weight: 700;
-  font-family: 'Courier New', monospace;
-  background: rgba(255, 255, 255, 0.04);
-  padding: 3px 10px;
-  border-radius: 8px;
-  min-width: 48px;
-  text-align: right;
-}
-.pwm-row.active-row  .motor-name { color: #81c784; font-weight: 600; }
-.pwm-row.active-row  .motor-pwm  {
-  color: #a5d6a7;
-  background: rgba(76, 175, 80, 0.12);
-  border: 1px solid rgba(76, 175, 80, 0.2);
-  box-shadow: 0 0 15px rgba(76, 175, 80, 0.1);
-}
-
-/* ===== Raw JSON Display ===== */
-pre#raw-json {
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  padding: 18px 22px;
-  font-size: 0.78rem;
-  color: #80deea;
-  max-width: 380px;
-  width: 100%;
-  overflow-x: auto;
-  line-height: 1.7;
-  z-index: 1;
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-}
-
-footer {
-  font-size: 0.65rem;
-  color: rgba(255, 255, 255, 0.3);
-  letter-spacing: 0.08em;
-  z-index: 1;
-  font-weight: 500;
-}
-
-@media (max-width: 480px) {
-  .belt-container, .direction-labels { width: 300px; }
-  .belt-arc { width: 300px; height: 170px; }
-  .motor { width: 72px; height: 72px; font-size: 0.6rem; }
-  .motor.left, .motor.right { top: 70px; }
-}
-</style>
-</head>
-<body>
-
-<h1>&#9889; HapticGuide &#8212; Live Belt Dashboard</h1>
-
-<div id="status-banner" class="safe">No obstacle detected</div>
-
-<!-- Curved Belt Visualisation -->
-<div class="belt-wrapper">
-  <div class="belt-label">Haptic Belt &#8212; Top View</div>
-  <div class="belt-container">
-    <div class="belt-arc"></div>
-    <div class="belt-center-line"></div>
-
-    <div id="m-left" class="motor left inactive">
-      <div class="motor-icon">&#9664;</div>
-      LEFT
-      <span class="pwm-val" id="pwm-left">0</span>
-    </div>
-
-    <div id="m-front" class="motor front inactive">
-      <div class="motor-icon">&#9650;</div>
-      FRONT
-      <span class="pwm-val" id="pwm-front">0</span>
-    </div>
-
-    <div id="m-right" class="motor right inactive">
-      <div class="motor-icon">&#9654;</div>
-      RIGHT
-      <span class="pwm-val" id="pwm-right">0</span>
-    </div>
-  </div>
-  <div class="direction-labels">
-    <span>Left</span>
-    <span class="center-label">Front</span>
-    <span>Right</span>
-  </div>
-</div>
-
-<!-- Info cards + PWM table -->
-<div class="cards">
-  <div class="card">
-    <div class="label">Current Target</div>
-    <div class="value highlight" id="card-target">&#8212;</div>
-  </div>
-  <div class="card">
-    <div class="label">Target Position</div>
-    <div class="value" id="card-position">&#8212;</div>
-  </div>
-  <div class="card">
-    <div class="label">Last Update</div>
-    <div class="value" id="card-updated">&#8212;</div>
-  </div>
-
-  <div class="pwm-table">
-    <div class="label">Current PWM Values</div>
-    <div class="pwm-row" id="row-left">
-      <span class="motor-name">Left</span>
-      <span class="motor-pwm" id="tval-left">0</span>
-    </div>
-    <div class="pwm-row" id="row-front">
-      <span class="motor-name">Front</span>
-      <span class="motor-pwm" id="tval-front">0</span>
-    </div>
-    <div class="pwm-row" id="row-right">
-      <span class="motor-name">Right</span>
-      <span class="motor-pwm" id="tval-right">0</span>
-    </div>
-  </div>
-</div>
-
-<pre id="raw-json">{}</pre>
-
-<footer>Polling /cmd every 50 ms &middot; /stats every 500 ms</footer>
-
-<script>
-const MOTORS = ['front', 'left', 'right'];
-
-function setMotor(name, pwm) {
-  const circle = document.getElementById('m-' + name);
-  const badge  = document.getElementById('pwm-' + name);
-  const row    = document.getElementById('row-' + name);
-  const tval   = document.getElementById('tval-' + name);
-
-  badge.textContent = pwm;
-  tval.textContent  = pwm;
-
-  if (pwm > 0) {
-    circle.classList.replace('inactive', 'active');
-    row.classList.add('active-row');
-  } else {
-    circle.classList.replace('active', 'inactive');
-    row.classList.remove('active-row');
-  }
-}
-
-function timestamp() {
-  return new Date().toLocaleTimeString('en-GB', {
-    hour12: false, hour: '2-digit', minute: '2-digit',
-    second: '2-digit', fractionalSecondDigits: 2
-  });
-}
-
-async function pollCmd() {
-  try {
-    const data = await fetch('/cmd').then(r => r.json());
-
-    MOTORS.forEach(m => setMotor(m, data[m] ?? 0));
-
-    const anyActive = MOTORS.some(m => (data[m] ?? 0) > 0);
-    const banner = document.getElementById('status-banner');
-    if (anyActive) {
-      banner.textContent = '\u26a0 Obstacle detected';
-      banner.className   = 'active';
-    } else {
-      banner.textContent = 'No obstacle detected';
-      banner.className   = 'safe';
-    }
-
-    document.getElementById('raw-json').textContent =
-      JSON.stringify(data, null, 2);
-    document.getElementById('card-updated').textContent = timestamp();
-  } catch (_) {}
-}
-
-async function pollStats() {
-  try {
-    const data   = await fetch('/stats').then(r => r.json());
-    const target = data.current_target;
-
-    if (target && typeof target === 'object') {
-      document.getElementById('card-target').textContent =
-        target.class_name ?? '\u2014';
-      document.getElementById('card-position').textContent =
-        target.position   ?? '\u2014';
-    } else if (typeof target === 'string' && target.length) {
-      document.getElementById('card-target').textContent   = target;
-      document.getElementById('card-position').textContent = '\u2014';
-    } else {
-      document.getElementById('card-target').textContent   = '\u2014';
-      document.getElementById('card-position').textContent = '\u2014';
-    }
-  } catch (_) {}
-}
-
-pollCmd();
-pollStats();
-setInterval(pollCmd,   50);
-setInterval(pollStats, 500);
-</script>
-</body>
-</html>
-"""
-
+# ---------------------------------------------------------------------------
+# GET /live — Redesigned HapticGuide Live Belt Dashboard
+# ---------------------------------------------------------------------------
 
 @router.get("/live", response_class=HTMLResponse)
-async def live_dashboard() -> HTMLResponse:
-    """
-    Serve the real-time haptic belt visualisation dashboard.
+async def live_dashboard(request: Request) -> HTMLResponse:
+    """Serve the live haptic belt visualization dashboard via Jinja2 template."""
+    phone_svg = _get_phone_svg()
+    belt_svg  = _get_belt_svg()
+    lm_svg    = _get_motor_svg("lm")
+    rm_svg    = _get_motor_svg("rm")
 
-    The page polls GET /cmd every 50 ms (20 FPS) for motor PWM state and
-    GET /stats every 500 ms for current target information.
-    No external frameworks. No page refresh required.
-
-    Open in any browser:
-        http://localhost:8000/live
-    """
-    return HTMLResponse(content=_LIVE_HTML, status_code=200)
+    return templates.TemplateResponse(
+        request=request,
+        name="live_dashboard.html",
+        context={
+            "phone_svg": phone_svg,
+            "belt_svg": belt_svg,
+            "lm_svg": lm_svg,
+            "rm_svg": rm_svg,
+        }
+    )

@@ -81,3 +81,12 @@ def test_get_health_endpoint(client):
 def test_removed_frame_endpoint(client):
     response = client.get("/frame")
     assert response.status_code == 404
+
+
+def test_get_live_endpoint(client):
+    response = client.get("/live")
+    assert response.status_code == 200
+    assert "HapticGuide" in response.text
+    assert "leftMotor" in response.text
+    assert "rightMotor" in response.text
+
