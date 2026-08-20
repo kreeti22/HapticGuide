@@ -18,8 +18,10 @@ class SettingsManager(context: Context) {
         private const val PREFS_NAME        = "hapticguide_prefs"
         private const val KEY_SERVER_IP     = "server_ip"
         private const val KEY_SERVER_PORT   = "server_port"
+        private const val KEY_HTTP_PORT     = "http_port"
         private const val DEFAULT_SERVER_IP = "192.168.1.100"
         private const val DEFAULT_PORT      = 9000
+        private const val DEFAULT_HTTP_PORT = 8000
     }
 
     fun getServerIp(): String =
@@ -34,5 +36,12 @@ class SettingsManager(context: Context) {
 
     fun setServerPort(port: Int) {
         prefs.edit().putInt(KEY_SERVER_PORT, port).apply()
+    }
+
+    fun getHttpPort(): Int =
+        prefs.getInt(KEY_HTTP_PORT, DEFAULT_HTTP_PORT)
+
+    fun setHttpPort(port: Int) {
+        prefs.edit().putInt(KEY_HTTP_PORT, port).apply()
     }
 }

@@ -48,21 +48,33 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.hapticguide.navigation.LocationTracker
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var settingsManager: SettingsManager
     private lateinit var tcpSender:       TcpFrameSender
     private lateinit var cameraManager:   CameraManager
+    private lateinit var locationTracker: LocationTracker
 
     private var isCameraPermissionGranted by mutableStateOf(false)
+    private var isLocationPermissionGranted by mutableStateOf(false)
 
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { isGranted ->
-        isCameraPermissionGranted = isGranted
-        if (!isGranted) {
+    private val requestPermissionsLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        isCameraPermissionGranted = grants[Manifest.permission.CAMERA] == true
+        isLocationPermissionGranted =
+            grants[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (!isCameraPermissionGranted) {
             Toast.makeText(this, "Camera permission required.", Toast.LENGTH_LONG).show()
+        }
+        if (!isLocationPermissionGranted) {
+            Toast.makeText(this, "Location permission required for navigation GPS.", Toast.LENGTH_LONG).show()
+            locationTracker.reportPermissionDenied()
+        } else {
+            startGpsUpdates()
         }
     }
 
@@ -77,8 +89,9 @@ class MainActivity : ComponentActivity() {
             context   = this,
             tcpSender = tcpSender,
         )
+        locationTracker = LocationTracker(this)
 
-        checkPermission()
+        checkPermissions()
 
         setContent {
             MaterialTheme(
@@ -97,25 +110,47 @@ class MainActivity : ComponentActivity() {
                         tcpSender           = tcpSender,
                         settingsManager     = settingsManager,
                         isPermissionGranted = isCameraPermissionGranted,
-                        onRequestPermission = { checkPermission() },
+                        onRequestPermission = { checkPermissions() },
+                        locationTracker     = locationTracker,
                     )
                 }
             }
         }
     }
 
-    private fun checkPermission() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-            == PackageManager.PERMISSION_GRANTED
-        ) {
-            isCameraPermissionGranted = true
-        } else {
-            requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+    private fun checkPermissions() {
+        isCameraPermissionGranted = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.CAMERA,
+        ) == PackageManager.PERMISSION_GRANTED
+        isLocationPermissionGranted =
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
+
+        val needed = mutableListOf<String>()
+        if (!isCameraPermissionGranted) needed.add(Manifest.permission.CAMERA)
+        if (!isLocationPermissionGranted) {
+            needed.add(Manifest.permission.ACCESS_FINE_LOCATION)
+            needed.add(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
+        if (needed.isNotEmpty()) {
+            requestPermissionsLauncher.launch(needed.toTypedArray())
+        } else {
+            startGpsUpdates()
+        }
+    }
+
+    private fun startGpsUpdates() {
+        locationTracker.start(
+            settingsManager.getServerIp(),
+            settingsManager.getHttpPort(),
+        )
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        locationTracker.stop()
         cameraManager.shutdown()
     }
 }
@@ -131,16 +166,19 @@ fun StreamerScreen(
     settingsManager:     SettingsManager,
     isPermissionGranted: Boolean,
     onRequestPermission: () -> Unit,
+    locationTracker:     LocationTracker,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val focusManager   = LocalFocusManager.current
 
     val senderState by tcpSender.state.collectAsState()
     val cameraFps   by cameraManager.cameraFps.collectAsState()
+    val gpsState    by locationTracker.state.collectAsState()
 
     // Editable fields — initialised from persisted settings
-    var serverIp   by remember { mutableStateOf(settingsManager.getServerIp()) }
-    var serverPort by remember { mutableStateOf(settingsManager.getServerPort().toString()) }
+    var serverIp    by remember { mutableStateOf(settingsManager.getServerIp()) }
+    var serverPort  by remember { mutableStateOf(settingsManager.getServerPort().toString()) }
+    var httpPort    by remember { mutableStateOf(settingsManager.getHttpPort().toString()) }
 
     Box(modifier = Modifier.fillMaxSize()) {
 
@@ -202,6 +240,16 @@ fun StreamerScreen(
             InfoRow("Port",          if (senderState.serverPort > 0)
                                          senderState.serverPort.toString()
                                      else serverPort)
+            val gpsColor = if (gpsState.statusText == "Active") Color(0xFF4CAF50)
+                           else if (gpsState.statusText == "Permission denied" ||
+                                    gpsState.statusText == "GPS unavailable") Color(0xFFEF5350)
+                           else Color.White
+            val gpsValue = if (gpsState.latitude != null && gpsState.longitude != null) {
+                "${gpsState.statusText}  %.5f, %.5f".format(gpsState.latitude, gpsState.longitude)
+            } else {
+                gpsState.statusText
+            }
+            InfoRow("GPS", gpsValue, valueColor = gpsColor)
 
             Spacer(Modifier.height(12.dp))
             HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
@@ -217,6 +265,8 @@ fun StreamerScreen(
                     onValueChange = {
                         serverIp = it
                         settingsManager.setServerIp(it)
+                        val http = httpPort.toIntOrNull() ?: settingsManager.getHttpPort()
+                        locationTracker.bindBackend(it.trim(), http)
                     },
                     label         = { Text("Server IP", color = Color.LightGray) },
                     singleLine    = true,
@@ -245,6 +295,27 @@ fun StreamerScreen(
                 )
             }
 
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value         = httpPort,
+                onValueChange = {
+                    httpPort = it
+                    it.toIntOrNull()?.let { p ->
+                        settingsManager.setHttpPort(p)
+                        locationTracker.bindBackend(serverIp.trim(), p)
+                    }
+                },
+                label         = { Text("HTTP Port (GPS)", color = Color.LightGray) },
+                singleLine    = true,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction    = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                colors  = tcpFieldColors(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
             Spacer(Modifier.height(12.dp))
 
             // ── START / STOP buttons ─────────────────────────────────────────
@@ -256,6 +327,8 @@ fun StreamerScreen(
                     onClick = {
                         focusManager.clearFocus()
                         val port = serverPort.toIntOrNull() ?: settingsManager.getServerPort()
+                        val http = httpPort.toIntOrNull() ?: settingsManager.getHttpPort()
+                        locationTracker.start(serverIp.trim(), http)
                         cameraManager.startStreaming(serverIp.trim(), port)
                     },
                     modifier = Modifier.weight(1f),

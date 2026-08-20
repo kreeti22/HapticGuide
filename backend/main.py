@@ -39,6 +39,7 @@ from camera_stream import CameraStream
 from shared_state import stop_event
 from ai_worker import start_ai_worker, stop_ai_worker
 from routes import router
+from navigation.routes import router as navigation_router
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +163,7 @@ app = FastAPI(
 )
 
 app.include_router(router)
+app.include_router(navigation_router)
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +225,7 @@ if __name__ == "__main__":
 
     print(
         f"[main] HTTP server  →  http://0.0.0.0:{http_port}\n"
-        f"[main] Endpoints    →  /cmd  /stats  /health\n"
+        f"[main] Endpoints    →  /cmd  /stats  /health  /nav/gps  /nav/status\n"
         f"[main] TCP receiver →  {_STATE['rtsp_url']}\n",
         flush=True,
     )
