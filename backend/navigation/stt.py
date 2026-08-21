@@ -169,9 +169,10 @@ class GroqSttService:
             response = client.audio.transcriptions.create(
                 file=(filename, audio_bytes),
                 model=self.model,
-                response_format="json",
+                temperature=0,
+                response_format="verbose_json",
             )
-            text = getattr(response, "text", "") or ""
+            text = getattr(response, "text", "") or (response.get("text", "") if isinstance(response, dict) else "")
             return text.strip()
         except Exception as exc:
             if "auth" in str(exc).lower() or "api_key" in str(exc).lower():

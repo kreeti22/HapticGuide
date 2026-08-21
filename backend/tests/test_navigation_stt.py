@@ -175,7 +175,8 @@ def test_groq_stt_transcription_success():
     mock_client.audio.transcriptions.create.assert_called_once_with(
         file=("audio.m4a", b"fake-audio-bytes"),
         model=GROQ_WHISPER_MODEL,
-        response_format="json",
+        temperature=0,
+        response_format="verbose_json",
     )
 
 
@@ -325,3 +326,85 @@ def test_voice_processing_does_not_modify_obstacle_state(nav_state_with_gps):
     assert after == before
     assert after["left"] == 180
     assert after["right"] == 220
+
+
+def test_post_voice_endpoint_empty_body(nav_state_with_gps):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from navigation.routes import router
+
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+
+    res = client.post("/nav/voice", content=b"")
+    assert res.status_code == 400
+    data = res.json()
+    assert data["ok"] is False
+    assert "No audio file" in data["error"]
+
+
+def test_post_voice_endpoint_multipart_upload(nav_state_with_gps):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from navigation.routes import router
+
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+
+    with patch("navigation.stt.process_voice_destination") as mock_process:
+        from navigation.stt import VoiceNavigationResult
+        from navigation.state import PlaceCandidate
+        mock_process.return_value = VoiceNavigationResult(
+            ok=True,
+            transcript="Hello Haptic Guide, take me to Connaught Place",
+            wake_phrase_detected=True,
+            destination_query="Connaught Place",
+            candidate=PlaceCandidate(name="Connaught Place", location=GeoPoint(28.6139, 77.2090), distance_m=120.0),
+        )
+
+        # Upload as multipart/form-data with file parameter (M4A)
+        res = client.post(
+            "/nav/voice",
+            files={"file": ("voice_command.m4a", b"fake-m4a-audio-data", "audio/mp4")},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["transcript"] == "Hello Haptic Guide, take me to Connaught Place"
+        assert data["destination"]["name"] == "Connaught Place"
+
+
+def test_post_voice_endpoint_raw_binary_upload(nav_state_with_gps):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from navigation.routes import router
+
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+
+    with patch("navigation.stt.process_voice_destination") as mock_process:
+        from navigation.stt import VoiceNavigationResult
+        from navigation.state import PlaceCandidate
+        mock_process.return_value = VoiceNavigationResult(
+            ok=True,
+            transcript="Hello Haptic Guide, navigate to Starbucks",
+            wake_phrase_detected=True,
+            destination_query="Starbucks",
+            candidate=PlaceCandidate(name="Starbucks", location=GeoPoint(28.6130, 77.2085), distance_m=80.0),
+        )
+
+        # Upload as raw binary stream with Content-Type: audio/mp4 (Android NavHttpClient format)
+        res = client.post(
+            "/nav/voice",
+            content=b"fake-binary-audio-bytes",
+            headers={"Content-Type": "audio/mp4"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["transcript"] == "Hello Haptic Guide, navigate to Starbucks"
+        assert data["destination"]["name"] == "Starbucks"
+
