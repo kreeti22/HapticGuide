@@ -34,7 +34,7 @@ class LocationTracker(
         val statusText: String = "Idle",
         val isActive: Boolean = false,
         val latitude: Double? = null,
-        val longitude: Double? = None,
+        val longitude: Double? = null,
     )
 
     companion object {
@@ -54,6 +54,7 @@ class LocationTracker(
     @Volatile private var started = false
     @Volatile private var lastFixAtMs = 0L
     @Volatile private var startedAtMs = 0L
+    @Volatile private var lastReportedFault: String? = null
     private var staleWatch: Job? = null
 
     fun bindBackend(ip: String, httpPort: Int) {
@@ -73,6 +74,7 @@ class LocationTracker(
 
     fun reportPermissionDenied() {
         stop()
+        lastReportedFault = "PERMISSION_DENIED"
         _state.value = GpsUiState(statusText = "Permission denied", isActive = false)
         scope.launch {
             httpClient.postFault("PERMISSION_DENIED", "Location permission denied")
@@ -89,6 +91,7 @@ class LocationTracker(
         val gpsOn = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
         val netOn = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
         if (!gpsOn && !netOn) {
+            lastReportedFault = "GPS_UNAVAILABLE"
             _state.value = GpsUiState(statusText = "GPS unavailable", isActive = false)
             scope.launch {
                 httpClient.postFault("GPS_UNAVAILABLE", "No location provider enabled")
@@ -123,6 +126,7 @@ class LocationTracker(
             started = true
             startedAtMs = System.currentTimeMillis()
             lastFixAtMs = 0L
+            lastReportedFault = null
             _state.value = _state.value.copy(statusText = "Acquiring…", isActive = true)
             publishLastKnown()
             startStaleWatch()
@@ -142,8 +146,12 @@ class LocationTracker(
         _state.value = _state.value.copy(isActive = false, statusText = "Stopped")
     }
 
+    private val phoneHapticPlayer = PhoneHapticPlayer(context)
+
     override fun onLocationChanged(location: Location) {
+        if (!started) return
         lastFixAtMs = System.currentTimeMillis()
+        lastReportedFault = null
         val acc = if (location.hasAccuracy()) location.accuracy else null
         _state.value = GpsUiState(
             statusText = "Active",
@@ -152,7 +160,11 @@ class LocationTracker(
             longitude = location.longitude,
         )
         scope.launch {
-            httpClient.postFix(location.latitude, location.longitude, acc)
+            val response = httpClient.postFix(location.latitude, location.longitude, acc)
+            val pendingEvent = response?.optString("pending_haptic_event")
+            if (!pendingEvent.isNullOrEmpty() && pendingEvent != "null") {
+                phoneHapticPlayer.handleHapticEvent(pendingEvent)
+            }
         }
     }
 
@@ -170,8 +182,11 @@ class LocationTracker(
         val netOn = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
         if (!gpsOn && !netOn) {
             _state.value = _state.value.copy(statusText = "GPS unavailable", isActive = false)
-            scope.launch {
-                httpClient.postFault("GPS_UNAVAILABLE", "Location providers disabled")
+            if (lastReportedFault != "GPS_UNAVAILABLE") {
+                lastReportedFault = "GPS_UNAVAILABLE"
+                scope.launch {
+                    httpClient.postFault("GPS_UNAVAILABLE", "Location providers disabled")
+                }
             }
         }
     }
@@ -197,11 +212,17 @@ class LocationTracker(
                 val now = System.currentTimeMillis()
                 if (last == 0L) {
                     if (now - startedAtMs > STALE_AFTER_MS) {
-                        httpClient.postFault("LOCATION_UNAVAILABLE", "Waiting for first GPS fix")
+                        if (lastReportedFault != "LOCATION_UNAVAILABLE") {
+                            lastReportedFault = "LOCATION_UNAVAILABLE"
+                            httpClient.postFault("LOCATION_UNAVAILABLE", "Waiting for first GPS fix")
+                        }
                         _state.value = _state.value.copy(statusText = "Unavailable")
                     }
                 } else if (now - last > STALE_AFTER_MS) {
-                    httpClient.postFault("STALE", "Location older than ${STALE_AFTER_MS}ms")
+                    if (lastReportedFault != "STALE") {
+                        lastReportedFault = "STALE"
+                        httpClient.postFault("STALE", "Location older than ${STALE_AFTER_MS}ms")
+                    }
                     _state.value = _state.value.copy(
                         statusText = "Stale",
                         isActive = true,

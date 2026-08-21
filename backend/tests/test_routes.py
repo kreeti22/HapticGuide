@@ -6,11 +6,14 @@ Unit tests for FastAPI endpoints (/cmd, /stats, /health) using TestClient.
 
 import sys
 from pathlib import Path
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 import pytest
 
-# Ensure backend directory is in sys.path
+pytest.importorskip("fastapi")
+pytest.importorskip("httpx")
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 backend_dir = Path(__file__).parent.parent
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
@@ -89,4 +92,9 @@ def test_get_live_endpoint(client):
     assert "HapticGuide" in response.text
     assert "leftMotor" in response.text
     assert "rightMotor" in response.text
+    assert "NAVIGATION" in response.text
+    assert "nav-modal" in response.text
+    assert "live-nav-hud" in response.text
+    assert "btn-voice-record" in response.text
+    assert "input-destination" in response.text
 

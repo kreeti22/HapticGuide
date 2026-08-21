@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass
 from typing import List, Dict, Optional
 
+import numpy as np
 from detector import DetectedObject
 from priority_table import PRIORITY_TABLE, DEFAULT_PRIORITY
 
@@ -26,14 +27,17 @@ class AnalyzedObject:
     """Enriched object metadata container."""
     class_name: str
     confidence: float
-    bbox: List[int]       # [x1, y1, x2, y2]
+    bbox: List[int]                         # [x1, y1, x2, y2]
     center_x: float
     center_y: float
     width: int
     height: int
     area: int
-    position: str         # "LEFT" | "CENTER" | "RIGHT"
-    priority: int         # Priority score (0 - 10)
+    position: str                           # "LEFT" | "CENTER" | "RIGHT"
+    priority: int                           # Priority score (0 - 10)
+    polygon: Optional[np.ndarray] = None
+    mask: Optional[np.ndarray] = None
+    mask_area: Optional[int] = None
 
     @classmethod
     def from_detected_object(
@@ -53,6 +57,9 @@ class AnalyzedObject:
             area=obj.area,
             position=position,
             priority=priority,
+            polygon=getattr(obj, "polygon", None),
+            mask=getattr(obj, "mask", None),
+            mask_area=getattr(obj, "mask_area", None),
         )
 
     def __repr__(self) -> str:

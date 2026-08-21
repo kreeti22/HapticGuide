@@ -15,6 +15,7 @@ import time
 from dataclasses import dataclass
 from typing import List, Optional, Set
 
+import numpy as np
 from detector import DetectedObject
 
 
@@ -42,12 +43,15 @@ class ObstacleObject:
     """Classified and filtered obstacle object ready for decision processing."""
     class_name: str
     confidence: float
-    bbox: List[int]       # [x1, y1, x2, y2]
+    bbox: List[int]                         # [x1, y1, x2, y2]
     center_x: float
     center_y: float
     width: int
     height: int
     area: int
+    polygon: Optional[np.ndarray] = None
+    mask: Optional[np.ndarray] = None
+    mask_area: Optional[int] = None
 
     @classmethod
     def from_detected_object(cls, obj: DetectedObject) -> ObstacleObject:
@@ -60,6 +64,9 @@ class ObstacleObject:
             width=obj.width,
             height=obj.height,
             area=obj.area,
+            polygon=getattr(obj, "polygon", None),
+            mask=getattr(obj, "mask", None),
+            mask_area=getattr(obj, "mask_area", None),
         )
 
     def __repr__(self) -> str:

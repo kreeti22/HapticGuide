@@ -1,12 +1,13 @@
 """
 detector.py
 -----------
-YOLOv8 Object Detector for HapticGuide.
+YOLOv8 Segmentation Detector for HapticGuide.
 
 Responsibilities:
-  - Load YOLO model once at initialization.
-  - Run GPU/FP16 accelerated inference on raw RGB/BGR frames.
-  - Convert raw YOLO outputs into custom DetectedObject instances.
+  - Load YOLO segmentation model (yolov8n-seg.pt) once at initialization.
+  - Run GPU/FP16 accelerated segmentation inference on raw RGB/BGR frames.
+  - Convert raw YOLO-Seg outputs (boxes & masks) into custom DetectedObject instances.
+  - Maintain bounding-box adapter compatibility for all downstream modules.
   - Log YOLO performance metrics every second.
 """
 
@@ -14,8 +15,9 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
+import cv2
 import numpy as np
 import torch
 from ultralytics import YOLO
@@ -23,35 +25,39 @@ from ultralytics import YOLO
 
 @dataclass
 class DetectedObject:
-    """Custom structured representation of a single YOLO object detection."""
+    """Custom structured representation of a single YOLO object detection with segmentation mask."""
     class_name: str
     confidence: float
-    bbox: List[int]       # [x1, y1, x2, y2] in pixel coordinates
-    center_x: float       # Bounding box center X coordinate
-    center_y: float       # Bounding box center Y coordinate
-    width: int            # Bounding box width
-    height: int           # Bounding box height
-    area: int             # Bounding box area (width * height)
+    bbox: List[int]                         # [x1, y1, x2, y2] in pixel coordinates
+    center_x: float                         # Bounding box center X coordinate
+    center_y: float                         # Bounding box center Y coordinate
+    width: int                              # Bounding box width
+    height: int                             # Bounding box height
+    area: int                               # Bounding box area (width * height)
+    polygon: Optional[np.ndarray] = None    # (N, 2) boundary polygon points [x, y] in pixel coordinates
+    mask: Optional[np.ndarray] = None       # Binary mask or tensor segment
+    mask_area: Optional[int] = None         # Pixel area / contour area of the segmentation mask
 
     def __repr__(self) -> str:
         pct = int(round(self.confidence * 100))
+        pts = len(self.polygon) if self.polygon is not None else 0
         return (
             f"DetectedObject({self.class_name} {pct}%, "
             f"bbox={self.bbox}, center=({self.center_x:.1f}, {self.center_y:.1f}), "
-            f"size={self.width}x{self.height}, area={self.area})"
+            f"size={self.width}x{self.height}, area={self.area}, mask_pts={pts})"
         )
 
 
 class YOLODetector:
     """
-    YOLOv8 object detector for frame-by-frame inference.
-    Loads model once during __init__, uses CUDA/FP16 if available,
-    and returns a list of custom DetectedObject instances.
+    YOLOv8 segmentation detector for frame-by-frame inference.
+    Loads segmentation model once during __init__, uses CUDA/FP16 if available,
+    and returns a list of custom DetectedObject instances with masks and bounding boxes.
     """
 
     def __init__(
         self,
-        model_path: str = "yolov8n.pt",
+        model_path: str = "yolov8n-seg.pt",
         confidence_threshold: float = 0.25,
         imgsz: int = 320,
     ) -> None:
@@ -62,7 +68,7 @@ class YOLODetector:
         self.use_fp16 = torch.cuda.is_available()
 
         print(
-            f"[YOLODetector] Initializing model '{model_path}' "
+            f"[YOLODetector] Initializing YOLO-Seg model '{model_path}' "
             f"on device '{self.device}' (FP16={self.use_fp16})...",
             flush=True,
         )
@@ -77,7 +83,7 @@ class YOLODetector:
         print("YOLO MODEL INFORMATION", flush=True)
         print(f"Model:    {model_path}", flush=True)
         print(f"Type:     {type(self.model.model).__name__}", flush=True)
-        print(f"Task:     {getattr(self.model, 'task', 'detect')}", flush=True)
+        print(f"Task:     {getattr(self.model, 'task', 'segment')}", flush=True)
         print(f"Classes:  {len(self.model.names)}", flush=True)
         print("Class Dictionary:", flush=True)
         print(self.model.names, flush=True)
@@ -89,10 +95,12 @@ class YOLODetector:
         self._yolo_fps: float = 0.0
         self._last_inference_ms: float = 0.0
         self._last_print_time: float = 0.0
+        self.last_raw_boxes = None
+        self.last_raw_masks = None
 
     def detect(self, frame: np.ndarray) -> List[DetectedObject]:
         """
-        Run object detection on an RGB/BGR numpy frame.
+        Run object segmentation on an RGB/BGR numpy frame.
 
         Parameters
         ----------
@@ -102,7 +110,7 @@ class YOLODetector:
         Returns
         -------
         List[DetectedObject]
-            List of structured detections.
+            List of structured detections with segmentation masks and bounding boxes.
         """
         if frame is None or frame.size == 0:
             return []
@@ -110,40 +118,46 @@ class YOLODetector:
         start_time = time.perf_counter()
 
         # Run model inference (reuse loaded model)
-        results = self.model(
-            frame,
-            imgsz=self.imgsz,
-            half=self.use_fp16,
-            stream=False,
-            verbose=False,
-        )
+        infer_kwargs = {
+            "imgsz": self.imgsz,
+            "stream": False,
+            "verbose": False,
+        }
+        if self.use_fp16:
+            infer_kwargs["half"] = True
+
+        results = self.model(frame, **infer_kwargs)
 
         self._last_inference_ms = (time.perf_counter() - start_time) * 1000.0
 
         detections: List[DetectedObject] = []
         boxes = results[0].boxes
+        masks = results[0].masks
         self.last_raw_boxes = boxes
+        self.last_raw_masks = masks
 
         # Immediately print EVERY raw detection returned by the model before any filtering
         print("---------------------------------------", flush=True)
-        print("RAW YOLO OUTPUT", flush=True)
+        print("RAW YOLO-SEG OUTPUT", flush=True)
         if boxes is not None and len(boxes) > 0:
-            for box in boxes:
+            for i, box in enumerate(boxes):
                 cls_id = int(box.cls[0])
                 class_name = str(self.model.names[cls_id])
                 conf = float(box.conf[0])
                 xyxy = [int(v) for v in box.xyxy[0].tolist()]
+                poly_pts = len(masks.xy[i]) if (masks is not None and len(masks.xy) > i) else 0
                 print(f"Class ID: {cls_id}", flush=True)
                 print(f"Class: {class_name}", flush=True)
                 print(f"Confidence: {conf:.2f}", flush=True)
                 print(f"Bounding Box: {xyxy}", flush=True)
+                print(f"Mask Points: {poly_pts}", flush=True)
                 print("", flush=True)
         else:
             print("No raw detections found", flush=True)
         print("---------------------------------------", flush=True)
 
         if boxes is not None and len(boxes) > 0:
-            for box in boxes:
+            for i, box in enumerate(boxes):
                 conf = float(box.conf[0])
                 if conf < self.confidence_threshold:
                     continue
@@ -159,6 +173,22 @@ class YOLODetector:
                 cy = y1 + h / 2.0
                 area = w * h
 
+                polygon = None
+                mask_data = None
+                mask_area = None
+
+                if masks is not None and len(masks.xy) > i:
+                    poly = masks.xy[i]
+                    if poly is not None and len(poly) > 0:
+                        polygon = poly
+                        if len(poly) >= 3:
+                            mask_area = int(cv2.contourArea(poly.astype(np.int32)))
+                        else:
+                            mask_area = area
+
+                if masks is not None and masks.data is not None and len(masks.data) > i:
+                    mask_data = masks.data[i]
+
                 detections.append(
                     DetectedObject(
                         class_name=class_name,
@@ -169,6 +199,9 @@ class YOLODetector:
                         width=w,
                         height=h,
                         area=area,
+                        polygon=polygon,
+                        mask=mask_data,
+                        mask_area=mask_area if mask_area is not None else area,
                     )
                 )
 
@@ -216,7 +249,6 @@ class YOLODetector:
 
 if __name__ == "__main__":
     print("Testing YOLODetector standalone...", flush=True)
-    import cv2
 
     detector = YOLODetector()
     dummy = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -227,3 +259,4 @@ if __name__ == "__main__":
         time.sleep(0.1)
 
     print("YOLODetector test finished cleanly.", flush=True)
+

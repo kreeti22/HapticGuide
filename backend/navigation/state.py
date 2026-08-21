@@ -69,10 +69,27 @@ class GpsFix:
 
 @dataclass(frozen=True)
 class PlaceCandidate:
-    """Placeholder for a future Overpass/OSM search result."""
+    """Overpass/OSM search result candidate."""
 
     name: str
     location: GeoPoint
+    distance_m: Optional[float] = None
+    osm_id: Optional[int] = None
+    osm_type: Optional[str] = None
+    tags: Optional[Dict[str, str]] = None
+
+
+@dataclass(frozen=True)
+class RouteStep:
+    """One step/maneuver along a calculated route."""
+
+    instruction: str
+    maneuver_type: str
+    maneuver_modifier: Optional[str] = None
+    location: Optional[GeoPoint] = None
+    distance_m: float = 0.0
+    duration_s: float = 0.0
+    road_name: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -80,31 +97,42 @@ class NavigationInstruction:
     text: str
     maneuver: Optional[str] = None
     distance_m: Optional[float] = None
+    step_index: Optional[int] = None
+    road_name: Optional[str] = None
 
 
 @dataclass(frozen=True)
 class RouteSnapshot:
-    """Placeholder for a future OSRM route. Geometry is omitted in Phase 1."""
+    """Calculated route snapshot."""
 
     current: Optional[NavigationInstruction] = None
     next: Optional[NavigationInstruction] = None
     distance_to_next_m: Optional[float] = None
     remaining_distance_m: Optional[float] = None
+    total_distance_m: Optional[float] = None
+    total_duration_s: Optional[float] = None
+    steps: Sequence[RouteStep] = field(default_factory=tuple)
+    geometry: Optional[Dict[str, object]] = None
+    origin: Optional[GeoPoint] = None
+    destination: Optional[GeoPoint] = None
 
 
 _ALLOWED_TRANSITIONS: Dict[NavigationStatus, set] = {
     NavigationStatus.IDLE: {
         NavigationStatus.LISTENING,
         NavigationStatus.SEARCHING_DESTINATION,
+        NavigationStatus.CALCULATING_ROUTE,
         NavigationStatus.ERROR,
     },
     NavigationStatus.LISTENING: {
         NavigationStatus.SEARCHING_DESTINATION,
+        NavigationStatus.CALCULATING_ROUTE,
         NavigationStatus.IDLE,
         NavigationStatus.ERROR,
     },
     NavigationStatus.SEARCHING_DESTINATION: {
         NavigationStatus.DESTINATION_FOUND,
+        NavigationStatus.CALCULATING_ROUTE,
         NavigationStatus.ERROR,
         NavigationStatus.IDLE,
     },
@@ -116,32 +144,42 @@ _ALLOWED_TRANSITIONS: Dict[NavigationStatus, set] = {
     },
     NavigationStatus.CALCULATING_ROUTE: {
         NavigationStatus.ROUTE_READY,
+        NavigationStatus.SEARCHING_DESTINATION,
         NavigationStatus.ERROR,
         NavigationStatus.IDLE,
     },
     NavigationStatus.ROUTE_READY: {
         NavigationStatus.NAVIGATING,
         NavigationStatus.CALCULATING_ROUTE,
+        NavigationStatus.SEARCHING_DESTINATION,
         NavigationStatus.ERROR,
         NavigationStatus.IDLE,
     },
     NavigationStatus.NAVIGATING: {
         NavigationStatus.ARRIVED,
         NavigationStatus.OFF_ROUTE,
+        NavigationStatus.CALCULATING_ROUTE,
+        NavigationStatus.SEARCHING_DESTINATION,
         NavigationStatus.ERROR,
         NavigationStatus.IDLE,
     },
     NavigationStatus.OFF_ROUTE: {
         NavigationStatus.CALCULATING_ROUTE,
         NavigationStatus.NAVIGATING,
+        NavigationStatus.SEARCHING_DESTINATION,
         NavigationStatus.ERROR,
         NavigationStatus.IDLE,
     },
     NavigationStatus.ARRIVED: {
+        NavigationStatus.SEARCHING_DESTINATION,
+        NavigationStatus.CALCULATING_ROUTE,
         NavigationStatus.IDLE,
         NavigationStatus.ERROR,
     },
     NavigationStatus.ERROR: {
+        NavigationStatus.SEARCHING_DESTINATION,
+        NavigationStatus.CALCULATING_ROUTE,
+        NavigationStatus.LISTENING,
         NavigationStatus.IDLE,
     },
 }
@@ -176,11 +214,18 @@ class NavigationState:
     destination_query: Optional[str] = None
     destination_name: Optional[str] = None
     destination: Optional[GeoPoint] = None
+    destination_distance_m: Optional[float] = None
+    destination_candidate: Optional[PlaceCandidate] = None
     current_location: Optional[GpsFix] = None
     current_instruction: Optional[NavigationInstruction] = None
     next_instruction: Optional[NavigationInstruction] = None
     distance_to_next_m: Optional[float] = None
     remaining_distance_m: Optional[float] = None
+    total_route_distance_m: Optional[float] = None
+    total_route_duration_s: Optional[float] = None
+    active_route: Optional[RouteSnapshot] = None
+    current_step_index: int = 0
+    is_maneuver_imminent: bool = False
     error_message: Optional[str] = None
     pending_haptic_event: Optional[NavigationEventType] = None
     gps_health: GpsHealth = GpsHealth.NONE
@@ -198,12 +243,20 @@ class NavigationState:
             "destination_name": self.destination_name,
             "destination_latitude": None if dest is None else dest.latitude,
             "destination_longitude": None if dest is None else dest.longitude,
+            "destination_distance_m": self.destination_distance_m,
             "current_latitude": None if loc is None else loc.latitude,
             "current_longitude": None if loc is None else loc.longitude,
             "current_instruction": None if self.current_instruction is None else self.current_instruction.text,
             "next_instruction": None if self.next_instruction is None else self.next_instruction.text,
+            "current_step_index": self.current_step_index,
             "distance_to_next_m": self.distance_to_next_m,
             "remaining_distance_m": self.remaining_distance_m,
+            "total_route_distance_m": self.total_route_distance_m,
+            "total_route_duration_s": self.total_route_duration_s,
+            "route_steps_count": len(self.active_route.steps) if (self.active_route and self.active_route.steps) else 0,
+            "is_off_route": (self.status == NavigationStatus.OFF_ROUTE),
+            "is_arrived": (self.status == NavigationStatus.ARRIVED),
+            "is_maneuver_imminent": self.is_maneuver_imminent,
             "error_message": self.error_message,
             "pending_haptic_event": (
                 None if self.pending_haptic_event is None else self.pending_haptic_event.value
@@ -212,6 +265,7 @@ class NavigationState:
             "gps_detail": self.gps_detail,
             "gps_age_ms": None,
             "gps_stale": False,
+            "gps_accuracy_m": None if loc is None else loc.accuracy_m,
         }
 
     def _transition(self, nxt: NavigationStatus) -> None:
@@ -241,6 +295,8 @@ class NavigationState:
             raise ValueError("Destination can be stored only while SEARCHING_DESTINATION.")
         self.destination_name = candidate.name
         self.destination = candidate.location
+        self.destination_distance_m = candidate.distance_m
+        self.destination_candidate = candidate
         self._transition(NavigationStatus.DESTINATION_FOUND)
 
     def begin_route_calculation(self) -> None:
@@ -254,6 +310,11 @@ class NavigationState:
         self.next_instruction = route.next
         self.distance_to_next_m = route.distance_to_next_m
         self.remaining_distance_m = route.remaining_distance_m
+        self.total_route_distance_m = route.total_distance_m
+        self.total_route_duration_s = route.total_duration_s
+        self.active_route = route
+        self.current_step_index = 0
+        self.is_maneuver_imminent = False
         self.route_status = RouteStatus.READY
         self._transition(NavigationStatus.ROUTE_READY)
 
@@ -311,16 +372,24 @@ class NavigationState:
         self.pending_haptic_event = None
 
     def reset(self) -> None:
-        self._transition(NavigationStatus.IDLE)
+        if self.status != NavigationStatus.IDLE:
+            self._transition(NavigationStatus.IDLE)
         self.route_status = RouteStatus.NONE
         self.destination_query = None
         self.destination_name = None
         self.destination = None
+        self.destination_distance_m = None
+        self.destination_candidate = None
         self.current_location = None
         self.current_instruction = None
         self.next_instruction = None
         self.distance_to_next_m = None
         self.remaining_distance_m = None
+        self.total_route_distance_m = None
+        self.total_route_duration_s = None
+        self.active_route = None
+        self.current_step_index = 0
+        self.is_maneuver_imminent = False
         self.error_message = None
         self.pending_haptic_event = None
         self.gps_health = GpsHealth.NONE
