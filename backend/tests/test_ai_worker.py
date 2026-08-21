@@ -4,12 +4,14 @@ test_ai_worker.py
 Unit test for AIWorker lifecycle and command updating.
 """
 
+import pytest
+pytest.importorskip("cv2")
+
 import sys
 import time
 from pathlib import Path
 import numpy as np
 import cv2
-import pytest
 
 # Ensure backend directory is in sys.path
 backend_dir = Path(__file__).parent.parent

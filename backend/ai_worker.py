@@ -253,15 +253,36 @@ class AIWorker:
         # Use bbox as the identity key — it is unique per detection per frame.
         selected_bbox = selected_target.bbox if selected_target is not None else None
 
-        # 1. Draw bounding boxes and metadata labels for each analyzed object
+        # 1. Fill segmentation mask overlay across all detected objects
+        mask_overlay = debug_frame.copy()
+        has_polygons = False
+
         for a_obj in analyzed_objects:
-            x1, y1, x2, y2 = a_obj.bbox
-
-            # Green for the selected target; blue for everything else
             is_selected = (selected_bbox is not None and a_obj.bbox == selected_bbox)
-            color       = (0, 255, 0) if is_selected else (255, 100, 0)
+            color       = (0, 255, 0) if is_selected else (255, 180, 0)
 
-            cv2.rectangle(debug_frame, (x1, y1), (x2, y2), color, 2)
+            if a_obj.polygon is not None and len(a_obj.polygon) >= 3:
+                has_polygons = True
+                pts = a_obj.polygon.astype(np.int32).reshape((-1, 1, 2))
+                cv2.fillPoly(mask_overlay, [pts], color)
+
+        # Translucent blending (40% mask color, 60% real scene) so environment stays visible
+        if has_polygons:
+            cv2.addWeighted(mask_overlay, 0.40, debug_frame, 0.60, 0, debug_frame)
+
+        # 2. Draw crisp segmentation boundaries and object labels (NO bounding boxes)
+        for a_obj in analyzed_objects:
+            is_selected   = (selected_bbox is not None and a_obj.bbox == selected_bbox)
+            contour_color = (0, 255, 0) if is_selected else (255, 200, 0)
+
+            if a_obj.polygon is not None and len(a_obj.polygon) >= 3:
+                pts = a_obj.polygon.astype(np.int32).reshape((-1, 1, 2))
+                cv2.polylines(debug_frame, [pts], isClosed=True, color=contour_color, thickness=2)
+                min_x = int(np.min(a_obj.polygon[:, 0]))
+                min_y = int(np.min(a_obj.polygon[:, 1]))
+            else:
+                x1, y1, _, _ = a_obj.bbox
+                min_x, min_y = x1, y1
 
             labels = [
                 f"{a_obj.class_name.capitalize()}",
@@ -270,23 +291,23 @@ class AIWorker:
                 f"{a_obj.position}",
             ]
 
-            y_text = max(y1 - 5, 15)
+            y_text = max(min_y - 6, 16)
             for line in reversed(labels):
                 (tw, th), _ = cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
                 cv2.rectangle(
                     debug_frame,
-                    (x1, max(y_text - th - 2, 0)),
-                    (x1 + tw + 4, max(y_text + 2, th + 2)),
+                    (min_x, max(y_text - th - 2, 0)),
+                    (min_x + tw + 4, max(y_text + 2, th + 2)),
                     (0, 0, 0),
                     cv2.FILLED,
                 )
                 cv2.putText(
                     debug_frame,
                     line,
-                    (x1 + 2, max(y_text - 1, th)),
+                    (min_x + 2, max(y_text - 1, th)),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.45,
-                    (0, 255, 255) if is_selected else (180, 180, 255),
+                    (0, 255, 255) if is_selected else (180, 220, 255),
                     1,
                     cv2.LINE_AA,
                 )

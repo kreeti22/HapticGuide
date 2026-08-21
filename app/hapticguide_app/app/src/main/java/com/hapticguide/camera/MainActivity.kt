@@ -49,6 +49,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.hapticguide.navigation.LocationTracker
+import com.hapticguide.navigation.VoiceRecorder
 
 class MainActivity : ComponentActivity() {
 
@@ -56,9 +57,11 @@ class MainActivity : ComponentActivity() {
     private lateinit var tcpSender:       TcpFrameSender
     private lateinit var cameraManager:   CameraManager
     private lateinit var locationTracker: LocationTracker
+    private lateinit var voiceRecorder:   VoiceRecorder
 
     private var isCameraPermissionGranted by mutableStateOf(false)
     private var isLocationPermissionGranted by mutableStateOf(false)
+    private var isAudioPermissionGranted by mutableStateOf(false)
 
     private val requestPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -67,6 +70,8 @@ class MainActivity : ComponentActivity() {
         isLocationPermissionGranted =
             grants[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
             grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        isAudioPermissionGranted = grants[Manifest.permission.RECORD_AUDIO] == true
+
         if (!isCameraPermissionGranted) {
             Toast.makeText(this, "Camera permission required.", Toast.LENGTH_LONG).show()
         }
@@ -90,6 +95,7 @@ class MainActivity : ComponentActivity() {
             tcpSender = tcpSender,
         )
         locationTracker = LocationTracker(this)
+        voiceRecorder   = VoiceRecorder(this)
 
         checkPermissions()
 
@@ -112,6 +118,7 @@ class MainActivity : ComponentActivity() {
                         isPermissionGranted = isCameraPermissionGranted,
                         onRequestPermission = { checkPermissions() },
                         locationTracker     = locationTracker,
+                        voiceRecorder       = voiceRecorder,
                     )
                 }
             }
@@ -127,12 +134,18 @@ class MainActivity : ComponentActivity() {
                 PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
                 PackageManager.PERMISSION_GRANTED
+        isAudioPermissionGranted = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.RECORD_AUDIO,
+        ) == PackageManager.PERMISSION_GRANTED
 
         val needed = mutableListOf<String>()
         if (!isCameraPermissionGranted) needed.add(Manifest.permission.CAMERA)
         if (!isLocationPermissionGranted) {
             needed.add(Manifest.permission.ACCESS_FINE_LOCATION)
             needed.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+        }
+        if (!isAudioPermissionGranted) {
+            needed.add(Manifest.permission.RECORD_AUDIO)
         }
         if (needed.isNotEmpty()) {
             requestPermissionsLauncher.launch(needed.toTypedArray())
@@ -146,10 +159,15 @@ class MainActivity : ComponentActivity() {
             settingsManager.getServerIp(),
             settingsManager.getHttpPort(),
         )
+        voiceRecorder.bindBackend(
+            settingsManager.getServerIp(),
+            settingsManager.getHttpPort(),
+        )
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        voiceRecorder.cancelRecording()
         locationTracker.stop()
         cameraManager.shutdown()
     }
@@ -167,6 +185,7 @@ fun StreamerScreen(
     isPermissionGranted: Boolean,
     onRequestPermission: () -> Unit,
     locationTracker:     LocationTracker,
+    voiceRecorder:       VoiceRecorder,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val focusManager   = LocalFocusManager.current
@@ -174,6 +193,7 @@ fun StreamerScreen(
     val senderState by tcpSender.state.collectAsState()
     val cameraFps   by cameraManager.cameraFps.collectAsState()
     val gpsState    by locationTracker.state.collectAsState()
+    val voiceState  by voiceRecorder.state.collectAsState()
 
     // Editable fields — initialised from persisted settings
     var serverIp    by remember { mutableStateOf(settingsManager.getServerIp()) }
@@ -251,6 +271,14 @@ fun StreamerScreen(
             }
             InfoRow("GPS", gpsValue, valueColor = gpsColor)
 
+            val voiceColor = if (voiceState.isRecording) Color(0xFFFF5722)
+                             else if (voiceState.isProcessing) Color(0xFF64B5F6)
+                             else Color.White
+            InfoRow("Voice Status", voiceState.statusMessage, valueColor = voiceColor)
+            if (!voiceState.lastDestination.isNullOrEmpty()) {
+                InfoRow("Destination", voiceState.lastDestination ?: "", valueColor = Color(0xFF81C784))
+            }
+
             Spacer(Modifier.height(12.dp))
             HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
             Spacer(Modifier.height(12.dp))
@@ -267,6 +295,7 @@ fun StreamerScreen(
                         settingsManager.setServerIp(it)
                         val http = httpPort.toIntOrNull() ?: settingsManager.getHttpPort()
                         locationTracker.bindBackend(it.trim(), http)
+                        voiceRecorder.bindBackend(it.trim(), http)
                     },
                     label         = { Text("Server IP", color = Color.LightGray) },
                     singleLine    = true,
@@ -303,9 +332,10 @@ fun StreamerScreen(
                     it.toIntOrNull()?.let { p ->
                         settingsManager.setHttpPort(p)
                         locationTracker.bindBackend(serverIp.trim(), p)
+                        voiceRecorder.bindBackend(serverIp.trim(), p)
                     }
                 },
-                label         = { Text("HTTP Port (GPS)", color = Color.LightGray) },
+                label         = { Text("HTTP Port (GPS/Voice)", color = Color.LightGray) },
                 singleLine    = true,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Number,
@@ -318,6 +348,22 @@ fun StreamerScreen(
 
             Spacer(Modifier.height(12.dp))
 
+            // ── Voice Input Button ───────────────────────────────────────────
+            Button(
+                onClick = {
+                    if (voiceState.isRecording) {
+                        voiceRecorder.stopRecordingAndSend()
+                    } else {
+                        voiceRecorder.startRecording()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (voiceState.isRecording) "🔴 STOP RECORDING & SEND" else "🎤 VOICE DESTINATION (TAP TO SPEAK)")
+            }
+
+            Spacer(Modifier.height(8.dp))
+
             // ── START / STOP buttons ─────────────────────────────────────────
             Row(
                 modifier              = Modifier.fillMaxWidth(),
@@ -329,6 +375,7 @@ fun StreamerScreen(
                         val port = serverPort.toIntOrNull() ?: settingsManager.getServerPort()
                         val http = httpPort.toIntOrNull() ?: settingsManager.getHttpPort()
                         locationTracker.start(serverIp.trim(), http)
+                        voiceRecorder.bindBackend(serverIp.trim(), http)
                         cameraManager.startStreaming(serverIp.trim(), port)
                     },
                     modifier = Modifier.weight(1f),

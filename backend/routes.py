@@ -39,9 +39,11 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 @router.get("/cmd", response_class=JSONResponse)
 async def get_cmd() -> JSONResponse:
-    """Return the latest motor command computed by the background AI worker."""
+    """Return the latest motor command computed by the background AI worker mixed with navigation."""
     with globals.command_lock:
-        return JSONResponse(dict(globals.latest_command))
+        raw_cmd = dict(globals.latest_command)
+    from navigation.emitter import get_mixed_command
+    return JSONResponse(get_mixed_command(raw_cmd))
 
 
 # ---------------------------------------------------------------------------

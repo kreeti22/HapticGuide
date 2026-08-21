@@ -4,6 +4,9 @@ test_camera_stream.py
 Unit test for high-performance TCP CameraStream receiver.
 """
 
+import pytest
+pytest.importorskip("cv2")
+
 import sys
 import socket
 import struct
@@ -11,7 +14,6 @@ import time
 from pathlib import Path
 import numpy as np
 import cv2
-import pytest
 
 # Ensure backend directory is in sys.path
 backend_dir = Path(__file__).parent.parent

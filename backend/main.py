@@ -225,7 +225,7 @@ if __name__ == "__main__":
 
     print(
         f"[main] HTTP server  →  http://0.0.0.0:{http_port}\n"
-        f"[main] Endpoints    →  /cmd  /stats  /health  /nav/gps  /nav/status\n"
+        f"[main] Endpoints    →  /cmd  /stats  /health  /nav/gps  /nav/search  /nav/route  /nav/voice  /nav/status\n"
         f"[main] TCP receiver →  {_STATE['rtsp_url']}\n",
         flush=True,
     )

@@ -12,7 +12,7 @@ import time
 from typing import Dict, Optional
 
 from navigation.interfaces import LocationSource
-from navigation.state import GpsFix, GpsHealth, NavigationState
+from navigation.state import GpsFix, GpsHealth, NavigationState, NavigationStatus
 
 STALE_AFTER_S = 8.0
 
@@ -29,6 +29,11 @@ def validate_coordinates(latitude: object, longitude: object) -> tuple[float, fl
         raise GpsIngestError(
             GpsHealth.LOCATION_UNAVAILABLE,
             "Latitude and longitude are required.",
+        )
+    if isinstance(latitude, bool) or isinstance(longitude, bool):
+        raise GpsIngestError(
+            GpsHealth.LOCATION_UNAVAILABLE,
+            "Latitude and longitude must be numbers, not booleans.",
         )
     try:
         lat = float(latitude)
@@ -67,20 +72,31 @@ def apply_gps_fix(
     received = time.monotonic() if now is None else now
     accuracy: Optional[float] = None
     if accuracy_m is not None:
-        try:
-            accuracy = float(accuracy_m)
-        except (TypeError, ValueError):
+        if isinstance(accuracy_m, bool):
             accuracy = None
-        if accuracy is not None and (not math.isfinite(accuracy) or accuracy < 0):
-            accuracy = None
-    state.set_current_location(
-        GpsFix(
-            latitude=lat,
-            longitude=lon,
-            accuracy_m=accuracy,
-            received_at_monotonic=received,
-        )
+        else:
+            try:
+                accuracy = float(accuracy_m)
+            except (TypeError, ValueError):
+                accuracy = None
+            if accuracy is not None and (not math.isfinite(accuracy) or accuracy < 0):
+                accuracy = None
+    fix = GpsFix(
+        latitude=lat,
+        longitude=lon,
+        accuracy_m=accuracy,
+        received_at_monotonic=received,
     )
+    state.set_current_location(fix)
+
+    if state.active_route is not None and state.status in (
+        NavigationStatus.ROUTE_READY,
+        NavigationStatus.NAVIGATING,
+        NavigationStatus.OFF_ROUTE,
+    ):
+        from navigation.follower import update_route_progress
+        update_route_progress(state, fix=fix)
+
     return gps_status_payload(state, now=received)
 
 

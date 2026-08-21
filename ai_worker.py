@@ -13,7 +13,7 @@ backend_dir = Path(__file__).parent / "backend"
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
-from ai_worker import AIWorker, ai_worker, start_ai_worker, stop_ai_worker
+from backend.ai_worker import AIWorker, ai_worker, start_ai_worker, stop_ai_worker
 
 __all__ = ["AIWorker", "ai_worker", "start_ai_worker", "stop_ai_worker"]
 

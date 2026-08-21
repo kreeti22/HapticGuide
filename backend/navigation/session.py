@@ -28,4 +28,7 @@ def reset_session() -> NavigationState:
     global _state
     with _lock:
         _state = NavigationState()
+        from navigation.emitter import get_emitter
+        get_emitter().reset()
+        get_emitter()._state = _state
         return _state

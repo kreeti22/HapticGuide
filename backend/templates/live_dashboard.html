@@ -26,6 +26,7 @@
   --text-muted: #4b5563;
   --success: #10b981;
   --warning: #f59e0b;
+  --danger: #ef4444;
 }
 
 body {
@@ -76,6 +77,15 @@ body {
   opacity: 0.75;
 }
 
+.header-badges {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
 .phone-status-badge {
   display: inline-flex;
   align-items: center;
@@ -90,7 +100,6 @@ body {
   color: var(--text-secondary);
   backdrop-filter: blur(8px);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-  margin-top: 4px;
 }
 
 .status-dot {
@@ -98,6 +107,51 @@ body {
   height: 7px;
   border-radius: 50%;
   background: var(--success);
+}
+
+/* Navigation Header Button */
+.nav-trigger-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+  color: var(--cyan-accent);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 14px rgba(56, 189, 248, 0.15);
+  transition: all 0.2s ease;
+}
+
+.nav-trigger-btn:hover {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: var(--cyan-accent);
+  box-shadow: 0 0 16px var(--cyan-glow);
+  transform: translateY(-1px);
+}
+
+.nav-indicator-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: background 0.3s;
+}
+
+.nav-indicator-dot.active {
+  background: var(--cyan-accent);
+  box-shadow: 0 0 8px var(--cyan-accent);
+  animation: pulse-dot 1.5s infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.3); }
 }
 
 /* ── Main Dashboard Container ───────────────────────────────────────── */
@@ -123,7 +177,7 @@ body {
   perspective: 1200px;
 }
 
-/* Physical Phone Component (ALWAYS in Popped-Out Foreground State) */
+/* Physical Phone Component */
 .phone-wrapper {
   position: absolute;
   top: -65px;
@@ -139,7 +193,6 @@ body {
   width: 100%;
   position: relative;
   border-radius: 38px;
-  /* Persistent elevated 3D depth state */
   transform: perspective(1000px) scale(1.06) translateZ(28px) rotateX(1deg) rotateY(-0.5deg);
   transform-style: preserve-3d;
   filter: 
@@ -148,232 +201,351 @@ body {
   will-change: transform;
 }
 
-/* Subtle High-Frequency Physical Phone Vibration Animation (For FRONT Obstacles) */
-@keyframes phonePhysicalVibration {
-  0%   { transform: perspective(1000px) scale(1.06) translateZ(28px) rotateX(1deg) rotateY(-0.5deg) translate(0, 0); }
-  20%  { transform: perspective(1000px) scale(1.06) translateZ(28px) rotateX(1deg) rotateY(-0.5deg) translate(-1px, 0.5px); }
-  40%  { transform: perspective(1000px) scale(1.06) translateZ(28px) rotateX(1deg) rotateY(-0.5deg) translate(1px, -0.5px); }
-  60%  { transform: perspective(1000px) scale(1.06) translateZ(28px) rotateX(1deg) rotateY(-0.5deg) translate(-0.8px, -0.4px); }
-  80%  { transform: perspective(1000px) scale(1.06) translateZ(28px) rotateX(1deg) rotateY(-0.5deg) translate(0.8px, 0.4px); }
-  100% { transform: perspective(1000px) scale(1.06) translateZ(28px) rotateX(1deg) rotateY(-0.5deg) translate(0, 0); }
-}
-
-.phone-wrapper.vibrating .phone-svg-container {
-  animation: phonePhysicalVibration 0.06s infinite linear;
-  filter: 
-    drop-shadow(0 30px 55px rgba(0, 0, 0, 0.98))
-    drop-shadow(0 0 15px rgba(56, 189, 248, 0.5));
-}
-
 .phone-svg-container svg {
   width: 100%;
   height: auto;
   display: block;
-  overflow: visible;
 }
 
-/* Belt Component */
-.belt-wrapper {
+/* Phone vibration animation */
+.phone-wrapper.vibrating .phone-svg-container {
+  animation: phone-vibe 0.08s linear infinite alternate;
+}
+
+@keyframes phone-vibe {
+  0%   { transform: perspective(1000px) scale(1.06) translateZ(28px) rotateX(1deg) rotateY(-0.5deg) translate(-1.5px, 0); }
+  100% { transform: perspective(1000px) scale(1.06) translateZ(28px) rotateX(1deg) rotateY(-0.5deg) translate(1.5px, 0); }
+}
+
+/* Belt Assembly Layer */
+.belt-stage-wrapper {
   position: relative;
   width: 100%;
-  aspect-ratio: 1200 / 430;
-  z-index: 10;
-  filter: drop-shadow(0 22px 34px rgba(0, 0, 0, 0.88));
-}
-
-.belt-svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-.belt-svg svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-/* Motor Units */
-.motor {
-  position: absolute;
-  top: 57%;
-  width: 11.5%;
-  aspect-ratio: 120 / 80;
+  margin-top: 130px;
   display: flex;
   align-items: center;
   justify-content: center;
-  pointer-events: none;
-  z-index: 15;
-  perspective: 600px;
-  transform-style: preserve-3d;
+  z-index: 10;
+}
+
+.belt-svg-wrapper {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  filter: drop-shadow(0 20px 40px rgba(0, 0, 0, 0.8));
+}
+
+.belt-svg-wrapper svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Left and Right Motors */
+.motor {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: clamp(75px, 15%, 115px);
+  z-index: 25;
+  cursor: pointer;
+  user-select: none;
 }
 
 .motor-left {
-  left: 12.1%;
-  transform: translate(-50%, -50%) perspective(600px) rotateY(18deg) rotateZ(5deg) translateZ(8px);
-  transform-origin: center right;
-  filter: 
-    drop-shadow(-4px 8px 12px rgba(0, 0, 0, 0.9))
-    drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7));
+  left: 6%;
 }
 
 .motor-right {
-  left: 87.9%;
-  transform: translate(-50%, -50%) perspective(600px) rotateY(-18deg) rotateZ(-5deg) translateZ(8px);
-  transform-origin: center left;
-  filter: 
-    drop-shadow(4px 8px 12px rgba(0, 0, 0, 0.9))
-    drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7));
+  right: 6%;
 }
 
 .motor-vibe-wrapper {
+  position: relative;
   width: 100%;
-  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
-  will-change: transform, opacity;
-  transition: filter 0.2s ease;
 }
 
-.motor svg {
+.motor-vibe-wrapper svg {
   width: 100%;
-  height: 100%;
+  height: auto;
   display: block;
+  filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.6));
+  transition: transform 0.15s ease;
 }
 
-/* Micro-Vibration Animation for Belt Motors */
-@keyframes hapticVibration {
-  0%   { transform: translate(0, 0) scale(1); opacity: 1; }
-  20%  { transform: translate(calc(-0.8px * var(--vib-scale, 1)), calc(0.4px * var(--vib-scale, 1))) scale(1.008); opacity: 0.98; }
-  40%  { transform: translate(calc(0.8px * var(--vib-scale, 1)), calc(-0.4px * var(--vib-scale, 1))) scale(0.992); opacity: 1; }
-  60%  { transform: translate(calc(-0.6px * var(--vib-scale, 1)), 0) scale(1.005); opacity: 0.98; }
-  80%  { transform: translate(calc(0.6px * var(--vib-scale, 1)), calc(0.4px * var(--vib-scale, 1))) scale(1); opacity: 1; }
-  100% { transform: translate(0, 0) scale(1); opacity: 1; }
+/* Vibration visual effect */
+.motor-vibe-wrapper.active svg {
+  animation: motor-vibrate var(--vibrate-speed, 0.08s) linear infinite alternate;
 }
 
-.motor-vibe-wrapper.active {
-  animation: hapticVibration var(--vibrate-speed, 0.07s) infinite linear;
-  filter: drop-shadow(0 2px 10px var(--motor-glow-color, var(--cyan-accent)));
+@keyframes motor-vibrate {
+  0%   { transform: translate(calc(-1px * var(--vib-scale, 1)), 0); }
+  100% { transform: translate(calc(1px * var(--vib-scale, 1)), 0); }
 }
 
-.motor-left .motor-vibe-wrapper.active { --motor-glow-color: rgba(56, 189, 248, 0.65); }
-.motor-right .motor-vibe-wrapper.active { --motor-glow-color: rgba(168, 85, 247, 0.65); }
-
+/* Ring waves around motors */
 .motor-wave-rings {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 140%;
-  height: 140%;
+  width: 100%;
+  height: 100%;
   transform: translate(-50%, -50%);
   pointer-events: none;
-  z-index: 5;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.motor-vibe-wrapper.active .motor-wave-rings {
+  opacity: 1;
 }
 
 .wave-ring-el {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 100%;
-  height: 100%;
+  width: 90%;
+  height: 90%;
   border-radius: 50%;
-  transform: translate(-50%, -50%) scale(0.5);
-  opacity: 0;
+  transform: translate(-50%, -50%);
   border: 2px solid var(--cyan-accent);
+  opacity: 0;
 }
 
-.motor-right .wave-ring-el { border-color: var(--purple-accent); }
-
-.motor-vibe-wrapper.active .wave-ring-el {
-  animation: wave-expand var(--wave-speed, 1s) cubic-bezier(0.1, 0.8, 0.3, 1) infinite;
+.motor-right .wave-ring-el {
+  border-color: var(--purple-accent);
 }
 
-.motor-vibe-wrapper.active .wave-ring-el:nth-child(1) { animation-delay: 0s; }
-.motor-vibe-wrapper.active .wave-ring-el:nth-child(2) { animation-delay: 0.33s; }
-.motor-vibe-wrapper.active .wave-ring-el:nth-child(3) { animation-delay: 0.66s; }
+.motor-vibe-wrapper.active .wave-ring-el:nth-child(1) {
+  animation: wave-expand var(--wave-speed, 1s) ease-out infinite;
+}
+.motor-vibe-wrapper.active .wave-ring-el:nth-child(2) {
+  animation: wave-expand var(--wave-speed, 1s) ease-out infinite 0.3s;
+}
+.motor-vibe-wrapper.active .wave-ring-el:nth-child(3) {
+  animation: wave-expand var(--wave-speed, 1s) ease-out infinite 0.6s;
+}
 
 @keyframes wave-expand {
-  0% { transform: translate(-50%, -50%) scale(0.4); opacity: 0.95; }
-  100% { transform: translate(-50%, -50%) scale(2.2); opacity: 0; }
+  0% {
+    width: 60%;
+    height: 60%;
+    opacity: 0.8;
+  }
+  100% {
+    width: 170%;
+    height: 170%;
+    opacity: 0;
+  }
 }
 
-/* ── Hero Footer Caption & Legend ───────────────────────────────────── */
+/* Hero Footer Caption & Legend */
 .hero-footer {
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  margin-top: 6px;
+  gap: 10px;
+  margin-top: 16px;
 }
 
 .hero-caption {
   font-size: 0.82rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
   color: var(--text-secondary);
-  letter-spacing: 0.05em;
+  font-weight: 500;
+  opacity: 0.85;
 }
 
 .motor-legend {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 16px;
   font-size: 0.68rem;
-  color: var(--text-secondary);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.12em;
   font-weight: 600;
+  color: var(--text-secondary);
 }
 
 .legend-badge {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
 }
 
 .legend-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  display: inline-block;
 }
 
-.legend-dot.left { background: var(--cyan-accent); }
-.legend-dot.right { background: var(--purple-accent); }
+.legend-dot.left {
+  background: var(--cyan-accent);
+  box-shadow: 0 0 8px var(--cyan-glow);
+}
 
-/* ── Minimal Professional Telemetry Panel (No Emojis) ───────────────── */
-.telemetry-panel {
+.legend-dot.right {
+  background: var(--purple-accent);
+  box-shadow: 0 0 8px var(--purple-glow);
+}
+
+/* ── Live Navigation HUD Banner (Visible when active) ─────────────────── */
+.nav-hud-card {
   width: 100%;
-  max-width: 840px;
+  background: linear-gradient(135deg, rgba(13, 20, 30, 0.95), rgba(18, 25, 38, 0.95));
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: 16px;
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  margin-top: 4px;
+  gap: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(56, 189, 248, 0.15);
+  backdrop-filter: blur(12px);
+  animation: hud-enter 0.3s ease-out;
+}
+
+@keyframes hud-enter {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.nav-hud-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 10px;
+}
+
+.nav-hud-status-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--cyan-accent);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nav-hud-status-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cyan-accent);
+  box-shadow: 0 0 6px var(--cyan-accent);
+}
+
+.nav-hud-dest {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.05em;
+}
+
+.nav-hud-body {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.nav-hud-maneuver-icon {
+  font-size: 1.8rem;
+  width: 46px;
+  height: 46px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.nav-hud-instructions {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.nav-hud-curr {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.nav-hud-next {
+  font-size: 0.76rem;
+  color: var(--cyan-accent);
+  font-weight: 500;
+}
+
+.nav-hud-distance-box {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.nav-hud-dist-val {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.nav-hud-dist-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+/* ── Telemetry Panel (Obstacle Detection) ────────────────────────────── */
+.telemetry-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.section-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+  margin-bottom: -6px;
+  padding-left: 4px;
 }
 
 .telemetry-grid-card {
+  width: 100%;
   background: var(--bg-card);
   border: 1px solid var(--border-card);
   border-radius: 16px;
-  padding: 20px 24px;
+  padding: 20px;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px 24px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
 .tele-item {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .tele-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -383,15 +555,15 @@ body {
 .tele-icon svg {
   width: 18px;
   height: 18px;
-  stroke-width: 2;
   fill: none;
   stroke: currentColor;
+  stroke-width: 2;
 }
 
-.tele-icon.cyan { color: var(--cyan-accent); border-color: rgba(56, 189, 248, 0.2); background: rgba(56, 189, 248, 0.04); }
-.tele-icon.purple { color: var(--purple-accent); border-color: rgba(168, 85, 247, 0.2); background: rgba(168, 85, 247, 0.04); }
-.tele-icon.green { color: var(--success); border-color: rgba(16, 185, 129, 0.2); background: rgba(16, 185, 129, 0.04); }
-.tele-icon.gold { color: var(--gold-accent); border-color: rgba(245, 158, 11, 0.2); background: rgba(245, 158, 11, 0.04); }
+.tele-icon.cyan   { color: var(--cyan-accent);   background: rgba(56, 189, 248, 0.1); }
+.tele-icon.purple { color: var(--purple-accent); background: rgba(168, 85, 247, 0.1); }
+.tele-icon.green  { color: var(--success);        background: rgba(16, 185, 129, 0.1); }
+.tele-icon.gold   { color: var(--gold-accent);   background: rgba(245, 158, 11, 0.1); }
 
 .tele-content {
   display: flex;
@@ -400,32 +572,32 @@ body {
 }
 
 .tele-label {
-  font-size: 0.6rem;
-  color: var(--text-muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-weight: 700;
+  color: var(--text-muted);
+  font-weight: 600;
 }
 
 .tele-value {
-  font-size: 1.05rem;
+  font-size: 0.95rem;
   font-weight: 700;
-  color: var(--text-primary);
-  line-height: 1.2;
+  letter-spacing: 0.04em;
 }
 
-.tele-value.cyan { color: var(--cyan-accent); }
+.tele-value.cyan   { color: var(--cyan-accent); }
 .tele-value.purple { color: var(--purple-accent); }
-.tele-value.green { color: var(--success); }
-.tele-value.warning { color: var(--warning); }
-.tele-value.gold { color: var(--gold-accent); font-family: 'Courier New', monospace; }
+.tele-value.green  { color: var(--success); }
+.tele-value.warning{ color: var(--warning); }
+.tele-value.gold   { color: var(--gold-accent); }
 
-/* Full-width PWM Motor Intensity Card */
+/* PWM Motor Intensity Card */
 .pwm-card {
+  width: 100%;
   background: var(--bg-card);
   border: 1px solid var(--border-card);
-  border-radius: 14px;
-  padding: 18px 24px;
+  border-radius: 16px;
+  padding: 18px 20px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -433,65 +605,359 @@ body {
 }
 
 .pwm-row {
-  display: grid;
-  grid-template-columns: 110px 1fr 40px;
+  display: flex;
   align-items: center;
   gap: 14px;
 }
 
 .pwm-motor-name {
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  width: 95px;
+  flex-shrink: 0;
 }
 
-.pwm-motor-name.left { color: var(--cyan-accent); }
+.pwm-motor-name.left  { color: var(--cyan-accent); }
 .pwm-motor-name.right { color: var(--purple-accent); }
 
 .pwm-track {
-  height: 5px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 3px;
+  flex: 1;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
   overflow: hidden;
+  position: relative;
 }
 
 .pwm-fill {
   height: 100%;
   width: 0%;
-  border-radius: 3px;
-  transition: width 0.1s ease;
+  border-radius: 6px;
+  transition: width 0.08s ease-out;
 }
 
-.pwm-fill.left { background: var(--cyan-accent); }
-.pwm-fill.right { background: var(--purple-accent); }
+.pwm-fill.left  { background: linear-gradient(90deg, #0284c7, var(--cyan-accent)); box-shadow: 0 0 10px var(--cyan-glow); }
+.pwm-fill.right { background: linear-gradient(90deg, #7e22ce, var(--purple-accent)); box-shadow: 0 0 10px var(--purple-glow); }
 
 .pwm-num {
   font-size: 0.82rem;
   font-weight: 700;
-  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  width: 32px;
   text-align: right;
-  font-family: 'Courier New', monospace;
+  color: var(--text-secondary);
 }
 
-/* Footer */
-.system-stats {
-  font-size: 0.65rem;
-  color: var(--text-muted);
-  text-align: center;
+/* ── Navigation Modal / Slide-Out Panel ───────────────────────────────── */
+.nav-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(10px);
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: fade-in 0.2s ease-out;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.nav-modal-card {
+  width: 100%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: #0d1117;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 24px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9), 0 0 30px rgba(56, 189, 248, 0.15);
+}
+
+.nav-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 14px;
+}
+
+.nav-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: var(--text-primary);
+  text-transform: uppercase;
+}
+
+.nav-modal-title svg {
+  color: var(--cyan-accent);
+}
+
+.nav-modal-close {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-secondary);
+  font-size: 1.2rem;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.nav-modal-close:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* Modal Search / Voice Section */
+.nav-search-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.nav-search-bar {
+  display: flex;
+  gap: 8px;
+}
+
+.nav-search-input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.nav-search-input:focus {
+  border-color: var(--cyan-accent);
+  box-shadow: 0 0 12px var(--cyan-glow);
+}
+
+.nav-btn {
+  background: var(--cyan-accent);
+  color: #050811;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 20px;
+  font-size: 0.82rem;
+  font-weight: 700;
   letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
-/* Responsive Breakpoints & Overflow Prevention */
-@media (max-width: 768px) {
-  .phone-wrapper { width: clamp(180px, 45%, 290px); top: -50px; }
+.nav-btn:hover {
+  background: #7dd3fc;
+  box-shadow: 0 0 16px var(--cyan-glow);
+  transform: translateY(-1px);
 }
 
-@media (max-width: 540px) {
-  body { padding: 20px 12px 30px; gap: 16px; }
-  .telemetry-grid-card { grid-template-columns: 1fr; gap: 16px; padding: 16px; }
-  .phone-wrapper { width: clamp(160px, 48%, 250px); top: -42px; }
-  .pwm-row { grid-template-columns: 85px 1fr 36px; gap: 10px; }
-  .tele-item { gap: 10px; }
+.nav-btn.secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.nav-btn.secondary:hover {
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: none;
+}
+
+.nav-btn.danger {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.nav-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.3);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.3);
+}
+
+.voice-btn {
+  width: 100%;
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(168, 85, 247, 0.15));
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: var(--text-primary);
+  border-radius: 14px;
+  padding: 14px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: all 0.2s;
+}
+
+.voice-btn:hover {
+  border-color: var(--cyan-accent);
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(168, 85, 247, 0.25));
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.2);
+}
+
+.voice-btn.recording {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: var(--danger);
+  color: #fca5a5;
+  animation: pulse-recording 1.2s infinite;
+}
+
+@keyframes pulse-recording {
+  0%, 100% { box-shadow: 0 0 10px rgba(239, 68, 68, 0.3); }
+  50% { box-shadow: 0 0 24px rgba(239, 68, 68, 0.6); }
+}
+
+.voice-transcript-card {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  display: none;
+}
+
+/* Modal Live Navigation Status */
+.nav-status-banner {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(56, 189, 248, 0.15));
+  border: 1px solid var(--success);
+  border-radius: 14px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--success);
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.1em;
+}
+
+.nav-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.nav-metric-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-metric-box .label {
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.nav-metric-box .value {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.nav-guidance-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.nav-maneuver-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.nav-maneuver-icon {
+  font-size: 1.5rem;
+  width: 38px;
+  height: 38px;
+  background: rgba(56, 189, 248, 0.1);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.nav-maneuver-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-maneuver-text .type {
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.nav-maneuver-text .desc {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Modal Actions */
+.nav-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* Footer stats */
+.system-stats {
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-top: 10px;
+  text-align: center;
 }
 </style>
 </head>
@@ -502,10 +968,21 @@ body {
     <h1 class="title">
       <span class="word-haptic">HAPTIC</span><span class="word-guide">GUIDE</span>
     </h1>
-    <div class="subtitle">LIVE BELT DASHBOARD</div>
-    <div class="phone-status-badge">
-      <span class="status-dot"></span>
-      <span id="phone-status-text">PHONE CONNECTED</span>
+    <div class="subtitle">Spatial Haptic Navigation System</div>
+    
+    <div class="header-badges">
+      <div class="phone-status-badge">
+        <span class="status-dot"></span>
+        <span id="phone-status-text">PHONE CONNECTED</span>
+      </div>
+
+      <!-- Navigation Trigger Button -->
+      <button id="btn-open-nav" class="nav-trigger-btn" onclick="openNavModal()">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+        <span>NAVIGATION</span>
+        <span class="nav-indicator-dot" id="nav-badge-dot"></span>
+        <span id="nav-badge-text">IDLE</span>
+      </button>
     </div>
   </header>
 
@@ -514,20 +991,17 @@ body {
 
     <!-- Product Showcase Stage -->
     <section class="product-showcase">
-
-      <!-- Phone Component -->
+      
+      <!-- Elevated 3D Phone in Front -->
       <div class="phone-wrapper">
         <div class="phone-svg-container">
           {{ phone_svg | safe }}
         </div>
       </div>
 
-      <!-- Belt Component -->
-      <div class="belt-wrapper">
-        <div class="belt-svg">
-          {{ belt_svg | safe }}
-        </div>
-
+      <!-- Belt and Motor Assembly -->
+      <div class="belt-stage-wrapper">
+        
         <!-- Left Motor -->
         <div class="motor motor-left" id="leftMotor">
           <div class="motor-vibe-wrapper">
@@ -538,6 +1012,11 @@ body {
             </div>
             {{ lm_svg | safe }}
           </div>
+        </div>
+
+        <!-- Belt Base Structure -->
+        <div class="belt-svg-wrapper">
+          {{ belt_svg | safe }}
         </div>
 
         <!-- Right Motor -->
@@ -571,8 +1050,28 @@ body {
       </div>
     </div>
 
-    <!-- Minimal Engineering Telemetry Panel -->
+    <!-- Live Navigation HUD Banner (Visible when active) -->
+    <div id="live-nav-hud" class="nav-hud-card" style="display: none;">
+      <div class="nav-hud-header">
+        <div class="nav-hud-status-badge" id="hud-status-badge">NAVIGATION ACTIVE</div>
+        <div class="nav-hud-dest" id="hud-destination">Nearest KFC</div>
+      </div>
+      <div class="nav-hud-body">
+        <div class="nav-hud-maneuver-icon" id="hud-maneuver-icon">⬆️</div>
+        <div class="nav-hud-instructions">
+          <div class="nav-hud-curr" id="hud-curr-instruction">Continue straight</div>
+          <div class="nav-hud-next" id="hud-next-instruction">Turn right in 38 m</div>
+        </div>
+        <div class="nav-hud-distance-box">
+          <div class="nav-hud-dist-val" id="hud-distance-val">38 m</div>
+          <div class="nav-hud-dist-label">TO TURN</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Obstacle Detection Telemetry Section -->
     <section class="telemetry-panel">
+      <div class="section-label">🛡️ SPATIAL OBSTACLE AVOIDANCE (AI VISION)</div>
 
       <!-- 2x2 Telemetry Grid Card -->
       <div class="telemetry-grid-card">
@@ -625,7 +1124,7 @@ body {
 
       <!-- PWM Motor Intensity Card -->
       <div class="pwm-card">
-        <div class="tele-label">VIBRATION MOTOR INTENSITY (PWM)</div>
+        <div class="tele-label">BELT MOTOR INTENSITY (PWM)</div>
 
         <!-- Left Motor Row -->
         <div class="pwm-row">
@@ -650,11 +1149,129 @@ body {
 
   </main>
 
+  <!-- Navigation Control & Telemetry Modal -->
+  <div id="nav-modal" class="nav-modal-backdrop" onclick="handleBackdropClick(event)">
+    <div class="nav-modal-card">
+      
+      <!-- Modal Header -->
+      <div class="nav-modal-header">
+        <div class="nav-modal-title">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+          <span>NAVIGATION SYSTEM</span>
+        </div>
+        <button class="nav-modal-close" onclick="closeNavModal()">&times;</button>
+      </div>
+
+      <!-- Destination Search Section -->
+      <div class="nav-search-section">
+        <div class="section-label">DESTINATION INPUT</div>
+        
+        <!-- Text Destination Input -->
+        <div class="nav-search-bar">
+          <input 
+            type="text" 
+            id="input-destination" 
+            class="nav-search-input" 
+            placeholder="e.g. nearest KFC, hospital, coffee shop" 
+            onkeydown="if(event.key==='Enter') executeTextSearch()"
+          />
+          <button class="nav-btn" id="btn-search-dest" onclick="executeTextSearch()">
+            <span>SEARCH</span>
+          </button>
+        </div>
+
+        <!-- Voice Destination Input (Groq STT) -->
+        <button id="btn-voice-record" class="voice-btn" onclick="toggleVoiceRecording()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          <span id="voice-btn-label">VOICE INPUT (HOLD/TAP TO SPEAK)</span>
+        </button>
+
+        <!-- Voice Transcript Status Box -->
+        <div id="voice-transcript-box" class="voice-transcript-card"></div>
+      </div>
+
+      <!-- Live Navigation Status Section -->
+      <div id="nav-live-status-section" style="display: flex; flex-direction: column; gap: 12px;">
+        <div class="section-label">NAVIGATION TELEMETRY & ROUTE</div>
+
+        <!-- Navigation Alert Banner -->
+        <div id="nav-alert-banner" class="nav-status-banner">
+          <span id="nav-alert-text">STATUS: IDLE</span>
+          <span id="nav-alert-pill" style="font-size:0.7rem; opacity:0.8;">WAITING FOR DESTINATION</span>
+        </div>
+
+        <!-- Metrics Grid -->
+        <div class="nav-metrics-grid">
+          <div class="nav-metric-box">
+            <span class="label">DESTINATION</span>
+            <span class="value" id="modal-val-dest">&#8212;</span>
+          </div>
+          <div class="nav-metric-box">
+            <span class="label">GPS STATUS</span>
+            <span class="value" id="modal-val-gps">ACTIVE</span>
+          </div>
+          <div class="nav-metric-box">
+            <span class="label">TOTAL DISTANCE</span>
+            <span class="value" id="modal-val-distance">&#8212;</span>
+          </div>
+          <div class="nav-metric-box">
+            <span class="label">EST. DURATION</span>
+            <span class="value" id="modal-val-duration">&#8212;</span>
+          </div>
+        </div>
+
+        <!-- Guidance Card -->
+        <div class="nav-guidance-card">
+          <!-- Current Step -->
+          <div class="nav-maneuver-row">
+            <div class="nav-maneuver-icon" id="modal-icon-curr">⬆️</div>
+            <div class="nav-maneuver-text">
+              <span class="type">CURRENT INSTRUCTION</span>
+              <span class="desc" id="modal-desc-curr">&#8212;</span>
+            </div>
+          </div>
+          
+          <div style="border-top: 1px solid rgba(255,255,255,0.06); margin: 2px 0;"></div>
+
+          <!-- Next Step -->
+          <div class="nav-maneuver-row">
+            <div class="nav-maneuver-icon" id="modal-icon-next">➡️</div>
+            <div class="nav-maneuver-text">
+              <span class="type">NEXT MANEUVER</span>
+              <span class="desc" id="modal-desc-next">&#8212;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modal Actions -->
+        <div class="nav-actions">
+          <button id="btn-start-nav" class="nav-btn" style="flex: 2;" onclick="startNavigation()">
+            <span>START NAVIGATION</span>
+          </button>
+          <button id="btn-reset-nav" class="nav-btn secondary danger" style="flex: 1;" onclick="resetNavigation()">
+            <span>RESET</span>
+          </button>
+        </div>
+
+        <!-- Quick GPS Simulation Tool for Demo without Phone -->
+        <div style="margin-top: 6px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: space-between;">
+          <span style="font-size: 0.62rem; color: var(--text-muted); letter-spacing: 0.1em;">DEMO GPS SIMULATOR</span>
+          <button class="nav-btn secondary" style="padding: 4px 10px; font-size: 0.62rem;" onclick="simulateGpsDelhi()">
+            Set GPS: New Delhi CP (28.6139, 77.2090)
+          </button>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
   <footer class="system-stats" id="system-stats">
-    Polling /cmd @ 20 Hz &middot; /stats @ 2 Hz
+    Polling /cmd @ 20 Hz &middot; /stats @ 2 Hz &middot; /nav/progress @ 1 Hz
   </footer>
 
 <script>
+// ── Motor PWM Rendering ───────────────────────────────────────────────────
 function setMotorState(motorId, prefix, pwm) {
   const motorEl = document.getElementById(motorId);
   if (!motorEl) return;
@@ -669,33 +1286,28 @@ function setMotorState(motorId, prefix, pwm) {
 
     let speed = '0.09s';
     let scale = 0.7;
-    let glow = '6px';
     let waveOpacity = 0.4;
     let waveSpeed = '1.2s';
 
     if (intensity <= 80) {
       speed = '0.09s';
       scale = 0.7;
-      glow = '6px';
       waveOpacity = 0.4;
       waveSpeed = '1.2s';
     } else if (intensity <= 170) {
       speed = '0.07s';
       scale = 1.15;
-      glow = '12px';
       waveOpacity = 0.75;
       waveSpeed = '0.9s';
     } else {
       speed = '0.05s';
       scale = 1.6;
-      glow = '18px';
       waveOpacity = 1.0;
       waveSpeed = '0.65s';
     }
 
     vibeWrapper.style.setProperty('--vibrate-speed', speed);
     vibeWrapper.style.setProperty('--vib-scale', scale);
-    vibeWrapper.style.setProperty('--glow-size', glow);
     vibeWrapper.style.setProperty('--wave-speed', waveSpeed);
 
     // Light up SVG LED indicator
@@ -714,7 +1326,6 @@ function setMotorState(motorId, prefix, pwm) {
     vibeWrapper.classList.remove('active');
     vibeWrapper.style.removeProperty('--vibrate-speed');
     vibeWrapper.style.removeProperty('--vib-scale');
-    vibeWrapper.style.removeProperty('--glow-size');
     vibeWrapper.style.removeProperty('--wave-speed');
 
     // Turn off SVG LED
@@ -747,6 +1358,7 @@ function getTimestamp() {
   return `${hrs}:${mins}:${secs}.${ms}`;
 }
 
+// ── Polling Obstacle /cmd (20 Hz) ─────────────────────────────────────────
 async function pollCmd() {
   try {
     const data = await fetch('/cmd').then(r => r.json());
@@ -756,34 +1368,23 @@ async function pollCmd() {
     const frontPwm = data.front ?? 0;
     const backPwm  = data.back  ?? 0;
 
-    // ── 2-MOTOR + PHONE HAPTIC OUTPUT MAPPING ────────────────────
     let phoneVibrating = false;
     let activeLeftPwm  = 0;
     let activeRightPwm = 0;
 
-    // 1. FRONT Obstacle -> Phone Vibration ONLY (Belt motors OFF)
+    // Obstacle front drives phone vibration
     if (frontPwm > 0) {
       phoneVibrating = true;
       activeLeftPwm  = 0;
       activeRightPwm = 0;
-    } 
-    // 2. LEFT Obstacle -> Left Belt Motor ONLY (Phone OFF, Right OFF)
-    else if (leftPwm > 0) {
+    } else if (leftPwm > 0) {
       phoneVibrating = false;
       activeLeftPwm  = leftPwm;
       activeRightPwm = 0;
-    } 
-    // 3. RIGHT Obstacle -> Right Belt Motor ONLY (Phone OFF, Left OFF)
-    else if (rightPwm > 0) {
+    } else if (rightPwm > 0) {
       phoneVibrating = false;
       activeLeftPwm  = 0;
       activeRightPwm = rightPwm;
-    } 
-    // 4. BACK Obstacle -> Isolated for future specification
-    else if (backPwm > 0) {
-      phoneVibrating = false;
-      activeLeftPwm  = 0;
-      activeRightPwm = 0;
     }
 
     // Update Phone Vibration State
@@ -800,7 +1401,7 @@ async function pollCmd() {
       }
     }
 
-    // Drive Left & Right belt motors independently
+    // Drive Left & Right belt motors
     setMotorState('leftMotor',  'lm', activeLeftPwm);
     setMotorState('rightMotor', 'rm', activeRightPwm);
 
@@ -826,6 +1427,7 @@ async function pollCmd() {
   } catch (_) {}
 }
 
+// ── Polling AI Stats (2 Hz) ───────────────────────────────────────────────
 async function pollStats() {
   try {
     const data = await fetch('/stats').then(r => r.json());
@@ -852,11 +1454,315 @@ async function pollStats() {
   } catch (_) {}
 }
 
-// Initialize polling
+// ── Maneuver Icon Helper ──────────────────────────────────────────────────
+function getManeuverIcon(maneuver) {
+  if (!maneuver) return '⬆️';
+  const m = maneuver.toUpperCase();
+  if (m.includes('LEFT')) return '⬅️';
+  if (m.includes('RIGHT')) return '➡️';
+  if (m.includes('ARRIV')) return '🏁';
+  return '⬆️';
+}
+
+// ── Polling Navigation State & Progress (1 Hz) ────────────────────────────
+async function pollNav() {
+  try {
+    const res = await fetch('/nav/progress').then(r => r.json());
+    const data = res.progress || {};
+    const navStatus = res.status || 'IDLE';
+    const gpsHealth = res.gps_health || 'NONE';
+    const destName = res.destination_name || '—';
+
+    // Header Navigation Badge
+    const badgeText = document.getElementById('nav-badge-text');
+    const badgeDot  = document.getElementById('nav-badge-dot');
+    if (badgeText) badgeText.textContent = navStatus;
+    if (badgeDot) {
+      if (navStatus === 'NAVIGATING' || navStatus === 'ROUTE_READY') {
+        badgeDot.className = 'nav-indicator-dot active';
+      } else {
+        badgeDot.className = 'nav-indicator-dot';
+      }
+    }
+
+    // Live Navigation HUD Banner
+    const hud = document.getElementById('live-nav-hud');
+    const isNavActive = navStatus === 'NAVIGATING' || navStatus === 'ROUTE_READY' || navStatus === 'OFF_ROUTE' || navStatus === 'ARRIVED';
+
+    if (hud) {
+      if (isNavActive) {
+        hud.style.display = 'flex';
+
+        const hudStatus = document.getElementById('hud-status-badge');
+        const hudDest   = document.getElementById('hud-destination');
+        const hudIcon   = document.getElementById('hud-maneuver-icon');
+        const hudCurr   = document.getElementById('hud-curr-instruction');
+        const hudNext   = document.getElementById('hud-next-instruction');
+        const hudDist   = document.getElementById('hud-distance-val');
+
+        if (hudStatus) hudStatus.textContent = navStatus === 'NAVIGATING' ? 'NAVIGATION ACTIVE' : navStatus;
+        if (hudDest)   hudDest.textContent   = destName;
+
+        const currText = data.current_instruction ? data.current_instruction.text : 'Head straight';
+        const nextText = data.next_instruction ? data.next_instruction.text : (data.is_arrived ? 'Arrived at destination' : 'Continue along route');
+        const distVal  = data.distance_to_next_m !== undefined && data.distance_to_next_m !== null ? `${data.distance_to_next_m} m` : '—';
+        const nextManeuver = data.next_maneuver || (data.current_instruction ? data.current_instruction.maneuver : 'STRAIGHT');
+
+        if (hudCurr) hudCurr.textContent = currText;
+        if (hudNext) hudNext.textContent = nextText;
+        if (hudDist) hudDist.textContent = distVal;
+        if (hudIcon) hudIcon.textContent = getManeuverIcon(nextManeuver);
+      } else {
+        hud.style.display = 'none';
+      }
+    }
+
+    // Modal Details Update
+    const modalDest = document.getElementById('modal-val-dest');
+    const modalGps  = document.getElementById('modal-val-gps');
+    const modalDist = document.getElementById('modal-val-distance');
+    const modalDur  = document.getElementById('modal-val-duration');
+    const modalCurrDesc = document.getElementById('modal-desc-curr');
+    const modalNextDesc = document.getElementById('modal-desc-next');
+    const modalCurrIcon = document.getElementById('modal-icon-curr');
+    const modalNextIcon = document.getElementById('modal-icon-next');
+    const alertText = document.getElementById('nav-alert-text');
+    const alertPill = document.getElementById('nav-alert-pill');
+    const alertBanner = document.getElementById('nav-alert-banner');
+
+    if (modalDest) modalDest.textContent = destName;
+    if (modalGps)  modalGps.textContent  = gpsHealth === 'ACTIVE' ? 'ACTIVE' : gpsHealth;
+
+    if (modalDist) {
+      if (res.total_route_distance_m) {
+        modalDist.textContent = res.total_route_distance_m >= 1000 ? `${(res.total_route_distance_m/1000).toFixed(1)} km` : `${res.total_route_distance_m} m`;
+      } else {
+        modalDist.textContent = '—';
+      }
+    }
+
+    if (modalDur) {
+      if (res.total_route_duration_s) {
+        modalDur.textContent = `${Math.round(res.total_route_duration_s / 60)} min`;
+      } else {
+        modalDur.textContent = '—';
+      }
+    }
+
+    if (modalCurrDesc) modalCurrDesc.textContent = data.current_instruction ? data.current_instruction.text : '—';
+    if (modalNextDesc) modalNextDesc.textContent = data.next_instruction ? `${data.next_instruction.text} (${data.distance_to_next_m ?? 0}m)` : (data.is_arrived ? 'Arrived at destination' : '—');
+    if (modalCurrIcon) modalCurrIcon.textContent = getManeuverIcon(data.current_instruction ? data.current_instruction.maneuver : 'STRAIGHT');
+    if (modalNextIcon) modalNextIcon.textContent = getManeuverIcon(data.next_maneuver);
+
+    if (alertText && alertBanner && alertPill) {
+      if (navStatus === 'NAVIGATING') {
+        alertText.textContent = 'NAVIGATION STARTED';
+        alertPill.textContent = 'TURN-BY-TURN ACTIVE';
+        alertBanner.style.borderColor = 'var(--success)';
+        alertBanner.style.color = 'var(--success)';
+      } else if (navStatus === 'ROUTE_READY') {
+        alertText.textContent = 'ROUTE READY';
+        alertPill.textContent = 'READY TO START';
+        alertBanner.style.borderColor = 'var(--cyan-accent)';
+        alertBanner.style.color = 'var(--cyan-accent)';
+      } else if (navStatus === 'ARRIVED') {
+        alertText.textContent = 'DESTINATION ARRIVED';
+        alertPill.textContent = 'COMPLETE';
+        alertBanner.style.borderColor = 'var(--gold-accent)';
+        alertBanner.style.color = 'var(--gold-accent)';
+      } else if (navStatus === 'OFF_ROUTE') {
+        alertText.textContent = 'OFF ROUTE';
+        alertPill.textContent = 'DEVIATION DETECTED';
+        alertBanner.style.borderColor = 'var(--danger)';
+        alertBanner.style.color = 'var(--danger)';
+      } else {
+        alertText.textContent = `STATUS: ${navStatus}`;
+        alertPill.textContent = 'WAITING FOR DESTINATION';
+        alertBanner.style.borderColor = 'rgba(255,255,255,0.15)';
+        alertBanner.style.color = 'var(--text-secondary)';
+      }
+    }
+
+  } catch (_) {}
+}
+
+// ── Modal Actions & Handlers ──────────────────────────────────────────────
+function openNavModal() {
+  const modal = document.getElementById('nav-modal');
+  if (modal) modal.style.display = 'flex';
+  pollNav();
+}
+
+function closeNavModal() {
+  const modal = document.getElementById('nav-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function handleBackdropClick(e) {
+  if (e.target.id === 'nav-modal') {
+    closeNavModal();
+  }
+}
+
+// ── Text Search Handler ───────────────────────────────────────────────────
+async function executeTextSearch() {
+  const input = document.getElementById('input-destination');
+  if (!input) return;
+  const query = input.value.trim();
+  if (!query) return;
+
+  const searchBtn = document.getElementById('btn-search-dest');
+  if (searchBtn) searchBtn.textContent = 'SEARCHING...';
+
+  try {
+    // 1. Search Destination via Phase 3 Overpass endpoint
+    const res = await fetch('/nav/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: query })
+    }).then(r => r.json());
+
+    if (res.ok) {
+      // 2. Automatically calculate route via Phase 4 endpoint
+      await fetch('/nav/route', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      pollNav();
+    } else {
+      alert(`Search failed: ${res.error || 'Unknown error'}`);
+    }
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  } finally {
+    if (searchBtn) searchBtn.textContent = 'SEARCH';
+  }
+}
+
+// ── Voice Search (Groq STT) ───────────────────────────────────────────────
+let mediaRecorder = null;
+let audioChunks = [];
+
+async function toggleVoiceRecording() {
+  const btn = document.getElementById('btn-voice-record');
+  const label = document.getElementById('voice-btn-label');
+  const transcriptBox = document.getElementById('voice-transcript-box');
+
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    // Stop recording and send audio to /nav/voice
+    mediaRecorder.stop();
+    if (btn) btn.className = 'voice-btn';
+    if (label) label.textContent = 'PROCESSING AUDIO (GROQ STT)...';
+    return;
+  }
+
+  // Start recording from browser microphone
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) audioChunks.push(event.data);
+    };
+
+    mediaRecorder.onstop = async () => {
+      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+      stream.getTracks().forEach(track => track.stop());
+
+      if (transcriptBox) {
+        transcriptBox.style.display = 'block';
+        transcriptBox.textContent = 'Transcribing with Groq Whisper (whisper-large-v3-turbo)...';
+      }
+
+      try {
+        const formData = new FormData();
+        formData.append('file', audioBlob, 'command.webm');
+
+        const voiceRes = await fetch('/nav/voice', {
+          method: 'POST',
+          body: formData,
+        }).then(r => r.json());
+
+        if (voiceRes.ok) {
+          if (transcriptBox) {
+            transcriptBox.innerHTML = `<strong>Groq Transcript:</strong> "${voiceRes.transcript}"<br><strong>Destination:</strong> ${voiceRes.destination ? voiceRes.destination.name : voiceRes.destination_query}`;
+          }
+          pollNav();
+        } else {
+          if (transcriptBox) {
+            transcriptBox.innerHTML = `<strong>Transcript:</strong> "${voiceRes.transcript || '—'}"<br><span style="color:var(--danger)">${voiceRes.error || 'Voice search failed'}</span>`;
+          }
+        }
+      } catch (err) {
+        if (transcriptBox) transcriptBox.textContent = `Upload error: ${err.message}`;
+      } finally {
+        if (label) label.textContent = 'VOICE INPUT (HOLD/TAP TO SPEAK)';
+      }
+    };
+
+    mediaRecorder.start();
+    if (btn) btn.className = 'voice-btn recording';
+    if (label) label.textContent = '🔴 RECORDING... TAP TO STOP & SEND';
+    if (transcriptBox) {
+      transcriptBox.style.display = 'block';
+      transcriptBox.textContent = 'Listening... Say "Hello Haptic Guide, take me to the nearest KFC"';
+    }
+  } catch (err) {
+    alert(`Microphone permission denied or unavailable: ${err.message}`);
+  }
+}
+
+// ── Start / Reset Navigation ──────────────────────────────────────────────
+async function startNavigation() {
+  try {
+    const res = await fetch('/nav/start', { method: 'POST' }).then(r => r.json());
+    if (res.ok) {
+      pollNav();
+    } else {
+      alert(`Cannot start: ${res.error || 'Route not ready'}`);
+    }
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  }
+}
+
+async function resetNavigation() {
+  try {
+    await fetch('/nav/reset', { method: 'POST' });
+    const transcriptBox = document.getElementById('voice-transcript-box');
+    if (transcriptBox) transcriptBox.style.display = 'none';
+    const input = document.getElementById('input-destination');
+    if (input) input.value = '';
+    pollNav();
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  }
+}
+
+// ── Demo GPS Simulator (New Delhi CP) ─────────────────────────────────────
+async function simulateGpsDelhi() {
+  try {
+    await fetch('/nav/gps', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ latitude: 28.6139, longitude: 77.2090, accuracy_m: 3.5 })
+    });
+    pollNav();
+    alert('Simulated GPS set to New Delhi CP (28.6139, 77.2090)!');
+  } catch (err) {
+    alert(`Error setting GPS: ${err.message}`);
+  }
+}
+
+// ── Initialize Polling ────────────────────────────────────────────────────
 pollCmd();
 pollStats();
+pollNav();
 setInterval(pollCmd, 50);
 setInterval(pollStats, 500);
+setInterval(pollNav, 1000);
 </script>
 </body>
 </html>
