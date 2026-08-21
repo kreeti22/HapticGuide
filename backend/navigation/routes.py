@@ -20,7 +20,7 @@ from navigation.gps import (
 )
 from navigation.routing import calculate_route_and_update_state
 from navigation.search import search_destination_and_update_state
-from navigation.state import GeoPoint
+from navigation.state import GeoPoint, NavigationStatus
 
 router = APIRouter(prefix="/nav", tags=["navigation"])
 
@@ -242,6 +242,40 @@ async def post_calculate_route_alias(payload: Optional[dict] = None) -> JSONResp
     return await post_calculate_route(payload)
 
 
+def _progress_payload(p) -> dict:
+    if p is None:
+        return {}
+    return {
+        "active": p.active,
+        "current_position": {
+            "latitude": p.current_position.latitude,
+            "longitude": p.current_position.longitude,
+        } if p.current_position else None,
+        "current_step_index": p.current_step_index,
+        "total_steps": p.total_steps,
+        "current_instruction": {
+            "text": p.current_instruction.text,
+            "maneuver": p.current_instruction.maneuver,
+            "distance_m": p.current_instruction.distance_m,
+            "step_index": p.current_instruction.step_index,
+            "road_name": p.current_instruction.road_name,
+        } if p.current_instruction else None,
+        "next_instruction": {
+            "text": p.next_instruction.text,
+            "maneuver": p.next_instruction.maneuver,
+            "distance_m": p.next_instruction.distance_m,
+            "step_index": p.next_instruction.step_index,
+            "road_name": p.next_instruction.road_name,
+        } if p.next_instruction else None,
+        "next_maneuver": p.next_maneuver,
+        "distance_to_next_m": p.distance_to_next_m,
+        "remaining_distance_m": p.remaining_distance_m,
+        "is_maneuver_imminent": p.is_maneuver_imminent,
+        "is_off_route": p.is_off_route,
+        "is_arrived": p.is_arrived,
+    }
+
+
 @router.post("/start")
 async def post_start_navigation() -> JSONResponse:
     """Start live route following on an active route."""
@@ -256,7 +290,7 @@ async def post_start_navigation() -> JSONResponse:
             state.begin_navigation()
         from navigation.follower import update_route_progress
         progress = update_route_progress(state)
-        return JSONResponse({"ok": True, "progress": progress.__dict__, **gps_status_payload(state)})
+        return JSONResponse({"ok": True, "progress": _progress_payload(progress), **gps_status_payload(state)})
 
 
 @router.get("/progress")
@@ -266,7 +300,7 @@ async def get_route_progress() -> JSONResponse:
         state = session.get_state()
         from navigation.follower import update_route_progress
         progress = update_route_progress(state)
-        return JSONResponse({"ok": True, "progress": progress.__dict__, **gps_status_payload(state)})
+        return JSONResponse({"ok": True, "progress": _progress_payload(progress), **gps_status_payload(state)})
 
 
 @router.post("/voice")

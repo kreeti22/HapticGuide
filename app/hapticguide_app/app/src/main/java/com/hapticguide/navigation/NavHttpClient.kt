@@ -72,6 +72,40 @@ class NavHttpClient {
         return null
     }
 
+    fun getProgress(): JSONObject? = get("/nav/progress")
+
+    fun getStatus(): JSONObject? = get("/nav/status")
+
+    private fun get(path: String): JSONObject? {
+        val ip = serverIp.trim()
+        if (ip.isEmpty() || httpPort <= 0) return null
+
+        val url = URL("http://$ip:$httpPort$path")
+        var conn: HttpURLConnection? = null
+        try {
+            conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = TIMEOUT_MS
+                readTimeout = TIMEOUT_MS
+                setRequestProperty("Accept", "application/json")
+            }
+            val responseCode = conn.responseCode
+            val responseBytes = if (responseCode in 200..299) {
+                conn.inputStream.use { it.readBytes() }
+            } else {
+                conn.errorStream?.use { it.readBytes() }
+            }
+            if (responseBytes != null && responseBytes.isNotEmpty()) {
+                return JSONObject(String(responseBytes, Charsets.UTF_8))
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "GET $path failed: ${e.message}")
+        } finally {
+            conn?.disconnect()
+        }
+        return null
+    }
+
     private fun post(path: String, body: JSONObject): JSONObject? {
         val ip = serverIp.trim()
         if (ip.isEmpty() || httpPort <= 0) return null

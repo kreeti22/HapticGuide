@@ -13,7 +13,7 @@ import android.util.Log
  * Drives phone-front navigation output (NAVIGATION_FRONT and NAVIGATION_START).
  * Isolated from CameraX, TCP streaming, and ESP32 belt motors.
  */
-class PhoneHapticPlayer(context: Context) {
+class PhoneHapticPlayer(context: Context? = null) {
 
     companion object {
         private const val TAG = "PhoneHapticPlayer"
@@ -25,13 +25,15 @@ class PhoneHapticPlayer(context: Context) {
         val PATTERN_START = longArrayOf(0, 80, 80, 80, 80, 80)
     }
 
-    private val vibrator: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
-        vm?.defaultVibrator
-    } else {
-        @Suppress("DEPRECATION")
-        context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-    }
+    private val vibrator: Vibrator? = if (context != null) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+            vm?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        }
+    } else null
 
     @Volatile private var lastTriggeredEvent: String? = null
 

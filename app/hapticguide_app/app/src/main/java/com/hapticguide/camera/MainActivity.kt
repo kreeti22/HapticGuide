@@ -169,6 +169,7 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
         voiceRecorder.cancelRecording()
         locationTracker.stop()
+        (locationTracker.serialTransport as? com.hapticguide.serial.HapticSerialManager)?.shutdown()
         cameraManager.shutdown()
     }
 }
@@ -278,6 +279,15 @@ fun StreamerScreen(
             if (!voiceState.lastDestination.isNullOrEmpty()) {
                 InfoRow("Destination", voiceState.lastDestination ?: "", valueColor = Color(0xFF81C784))
             }
+
+            val serialState by locationTracker.serialTransport.connectionState.collectAsState()
+            val serialColor = when (serialState) {
+                com.hapticguide.serial.SerialConnectionState.CONNECTED -> Color(0xFF4CAF50)
+                com.hapticguide.serial.SerialConnectionState.CONNECTING -> Color(0xFFFFB74D)
+                com.hapticguide.serial.SerialConnectionState.ERROR -> Color(0xFFEF5350)
+                com.hapticguide.serial.SerialConnectionState.DISCONNECTED -> Color.LightGray
+            }
+            InfoRow("ESP32 Serial", serialState.statusText, valueColor = serialColor)
 
             Spacer(Modifier.height(12.dp))
             HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
@@ -389,6 +399,51 @@ fun StreamerScreen(
                     enabled  = cameraManager.isStreaming,
                 ) {
                     Text("STOP")
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            // ── Manual Haptic Test / Debug Row ───────────────────────────────
+            Text(
+                "Manual Haptic Test (ESP32 Serial):",
+                fontSize = 11.sp,
+                color = Color.LightGray,
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Button(
+                    onClick = { locationTracker.serialTransport.send("START") },
+                    modifier = Modifier.weight(1.1f),
+                ) {
+                    Text("START", fontSize = 9.sp)
+                }
+                Button(
+                    onClick = { locationTracker.serialTransport.send("LEFT") },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("LEFT", fontSize = 9.sp)
+                }
+                Button(
+                    onClick = { locationTracker.serialTransport.send("FRONT") },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("FRONT", fontSize = 9.sp)
+                }
+                Button(
+                    onClick = { locationTracker.serialTransport.send("RIGHT") },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("RIGHT", fontSize = 9.sp)
+                }
+                Button(
+                    onClick = { locationTracker.serialTransport.send("STOP") },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("STOP", fontSize = 9.sp)
                 }
             }
         }

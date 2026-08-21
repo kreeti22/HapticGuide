@@ -1,232 +1,308 @@
 /*
+ * ==============================================================================
  * HapticGuide ESP32 Motor Controller Firmware
- * ===========================================
- *
- * Responsibilities:
- *   1. Connect to local Wi-Fi network.
- *   2. Poll GET /cmd endpoint from HapticGuide FastAPI backend every 30-50 ms.
- *   3. Parse JSON payload: {"left": int, "front": int, "right": int, "back": int}.
- *   4. Apply PWM (0-255) to 4 haptic vibration motors via ESP32 LEDC PWM peripheral.
- *   5. Log telemetry to Serial (Received Command, Applied PWM, Motor States).
- *   6. Fail-safe protection: set all motor PWMs to 0 if connection drops or response fails.
- *
- * Hardware Wiring (Default GPIOs):
- *   - Left Motor  -> GPIO 12
- *   - Front Motor -> GPIO 13
- *   - Right Motor -> GPIO 14
- *   - Back Motor  -> GPIO 27
- *   - Common GND  -> Power Supply / Motor Driver GND
+ * ==============================================================================
+ * 
+ * Hardware Role:
+ *   - Dedicated haptic actuator slave.
+ *   - Reads newline-delimited commands from Serial (115200 baud).
+ *   - Drives 2 haptic vibration motors via ESP32 LEDC PWM.
+ *   - Strictly contains NO navigation, routing, GPS, or AI logic.
+ * 
+ * Target Hardware:
+ *   - ESP32 Development Board (ESP32-WROOM-32, NodeMCU-32S, ESP32-S2/S3)
+ *   - Motor 1 (Left):  GPIO 27
+ *   - Motor 2 (Right): GPIO 26
+ * 
+ * LEDC PWM API:
+ *   - Uses Arduino-ESP32 Core 3.x API:
+ *       ledcAttach(pin, frequency, resolution)
+ *       ledcWrite(pin, duty)
+ * 
+ * Command Protocol (ASCII, Line-Delimited):
+ *   - START\n    -> 3 pulses on Motor 1 & Motor 2
+ *   - LEFT\n     -> 2 pulses on Motor 1 (GPIO 27)
+ *   - RIGHT\n    -> 2 pulses on Motor 2 (GPIO 26)
+ *   - FRONT\n    -> Safely handled according to contract (Phone vibrator primary)
+ *   - ARRIVAL\n  -> Navigation complete placeholder; all motors OFF
+ *   - STOP\n     -> Immediately stop all motors
+ * ==============================================================================
  */
 
-#include <WiFi.h>
-#include <HTTPClient.h>
-#include <ArduinoJson.h>
+#include <Arduino.h>
 
-// ---------------------------------------------------------------------------
-// Network & Server Configuration
-// ---------------------------------------------------------------------------
-const char* WIFI_SSID     = "YOUR_WIFI_SSID";
-const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+// ------------------------------------------------------------------------------
+// Hardware Pin Definitions
+// ------------------------------------------------------------------------------
+const uint8_t PIN_MOTOR_LEFT  = 27;  // Motor 1 (Left axis)
+const uint8_t PIN_MOTOR_RIGHT = 26;  // Motor 2 (Right axis)
 
-// Replace with your backend IP address (e.g. "http://192.168.1.100:8000/cmd")
-const char* SERVER_CMD_URL = "http://192.168.1.100:8000/cmd";
+// ------------------------------------------------------------------------------
+// Serial Configuration
+// ------------------------------------------------------------------------------
+const uint32_t SERIAL_BAUD_RATE = 115200;
 
-// Polling interval gate (30 - 50 ms loop execution)
-const unsigned long POLL_INTERVAL_MS = 40;  // ~25 Hz polling rate
-const unsigned long HTTP_TIMEOUT_MS = 150;  // Low latency HTTP timeout
+// ------------------------------------------------------------------------------
+// PWM Parameters (Arduino-ESP32 Core 3.x LEDC)
+// ------------------------------------------------------------------------------
+const uint32_t PWM_FREQUENCY_HZ  = 5000;  // 5 kHz optimal for haptic drivers
+const uint8_t  PWM_RESOLUTION_BITS = 8;   // 8-bit resolution (0 - 255)
+const uint32_t PWM_DUTY_MAX       = 255;  // 100% duty cycle
+const uint32_t PWM_DUTY_OFF       = 0;    // Motor off
 
-// ---------------------------------------------------------------------------
-// Hardware Pin & PWM Definitions
-// ---------------------------------------------------------------------------
-#define PIN_MOTOR_LEFT   12
-#define PIN_MOTOR_FRONT  13
-#define PIN_MOTOR_RIGHT  14
-#define PIN_MOTOR_BACK   27
+// ------------------------------------------------------------------------------
+// Haptic Timing Specifications (Contract Phase 0)
+// ------------------------------------------------------------------------------
+const uint16_t PULSE_ON_DURATION_MS  = 80;  // Active vibration duration
+const uint16_t PULSE_OFF_DURATION_MS = 80;  // Inter-pulse pause duration
 
-#define PWM_FREQ         5000  // 5 kHz PWM frequency
-#define PWM_RESOLUTION   8     // 8-bit resolution (0 - 255)
+const uint8_t PULSE_COUNT_START    = 3;  // START event: 3 pulses
+const uint8_t PULSE_COUNT_MANEUVER = 2;  // LEFT / RIGHT events: 2 pulses
 
-#define CHANNEL_LEFT     0
-#define CHANNEL_FRONT    1
-#define CHANNEL_RIGHT    2
-#define CHANNEL_BACK     3
+// FRONT event behavior:
+// In HapticGuide contract, FRONT navigation feedback is played by the phone vibrator.
+// If FRONT_PULSE_MOTORS is false, ESP32 logs the event and keeps belt motors idle.
+// If FRONT_PULSE_MOTORS is true, ESP32 plays 2 subtle pulses on both motors.
+const bool FRONT_PULSE_MOTORS = false;
 
-// ---------------------------------------------------------------------------
-// State Tracking
-// ---------------------------------------------------------------------------
-struct MotorCommand {
-    int left  = 0;
-    int front = 0;
-    int right = 0;
-    int back  = 0;
+// ------------------------------------------------------------------------------
+// Non-Blocking Pulse Sequencer State Machine
+// ------------------------------------------------------------------------------
+struct HapticSequencer {
+    bool          isRunning;
+    bool          driveMotorLeft;
+    bool          driveMotorRight;
+    uint8_t       totalPulses;
+    uint8_t       currentPulse;
+    bool          inOnPhase;
+    unsigned long phaseStartTimeMs;
+    uint16_t      onDurationMs;
+    uint16_t      offDurationMs;
+    uint32_t      activeDuty;
 };
 
-MotorCommand currentCmd;
-unsigned long lastPollTime = 0;
+static HapticSequencer sequencer = {
+    false, false, false, 0, 0, false, 0,
+    PULSE_ON_DURATION_MS, PULSE_OFF_DURATION_MS, PWM_DUTY_MAX
+};
 
-// Shared HTTPClient instance for HTTP keep-alive connection reuse
-HTTPClient http;
-WiFiClient wifiClient;
+// ------------------------------------------------------------------------------
+// Serial Buffer Management
+// ------------------------------------------------------------------------------
+const size_t RX_BUFFER_CAPACITY = 64;
+static char   rxBuffer[RX_BUFFER_CAPACITY];
+static size_t rxIndex = 0;
 
-// ---------------------------------------------------------------------------
-// Helper: Core-Agnostic LEDC Setup
-// ---------------------------------------------------------------------------
-void initMotorPWM(int pin, int channel) {
-#if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
-    // Arduino ESP32 Core v3+ API
-    ledcAttach(pin, PWM_FREQ, PWM_RESOLUTION);
-#else
-    // Arduino ESP32 Core v2 API
-    ledcSetup(channel, PWM_FREQ, PWM_RESOLUTION);
-    ledcAttachPin(pin, channel);
-#endif
+// ------------------------------------------------------------------------------
+// Low-Level Motor Control (Arduino-ESP32 Core 3.x API)
+// ------------------------------------------------------------------------------
+void setMotorOutputs(uint32_t leftDuty, uint32_t rightDuty) {
+    ledcWrite(PIN_MOTOR_LEFT,  leftDuty);
+    ledcWrite(PIN_MOTOR_RIGHT, rightDuty);
 }
 
-void writeMotorPWM(int pin, int channel, int dutyCycle) {
-    // Clamp duty cycle to valid 8-bit range [0, 255]
-    dutyCycle = max(0, min(255, dutyCycle));
-
-#if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
-    ledcWrite(pin, dutyCycle);
-#else
-    ledcWrite(channel, dutyCycle);
-#endif
+void stopAllMotors() {
+    sequencer.isRunning = false;
+    setMotorOutputs(PWM_DUTY_OFF, PWM_DUTY_OFF);
 }
 
-// ---------------------------------------------------------------------------
-// Apply Motor PWM & Output Serial Telemetry
-// ---------------------------------------------------------------------------
-void applyMotorCommands(const MotorCommand& cmd, const String& rawJsonPayload) {
-    // 1. Drive Hardware PWM Outputs
-    writeMotorPWM(PIN_MOTOR_LEFT,  CHANNEL_LEFT,  cmd.left);
-    writeMotorPWM(PIN_MOTOR_FRONT, CHANNEL_FRONT, cmd.front);
-    writeMotorPWM(PIN_MOTOR_RIGHT, CHANNEL_RIGHT, cmd.right);
-    writeMotorPWM(PIN_MOTOR_BACK,  CHANNEL_BACK,  cmd.back);
-
-    // 2. Format & Print Telemetry
-    Serial.println("==================================================");
-    Serial.print("Received Command : ");
-    Serial.println(rawJsonPayload.length() > 0 ? rawJsonPayload : "FAILSAFE_OFF");
-
-    Serial.print("Applied PWM      : Left=");
-    Serial.print(cmd.left);
-    Serial.print(" | Front=");
-    Serial.print(cmd.front);
-    Serial.print(" | Right=");
-    Serial.print(cmd.right);
-    Serial.print(" | Back=");
-    Serial.println(cmd.back);
-
-    Serial.print("Motor States     : Left:");
-    Serial.print(cmd.left > 0 ? "ON (" + String(cmd.left) + ")" : "OFF");
-    Serial.print(" | Front:");
-    Serial.print(cmd.front > 0 ? "ON (" + String(cmd.front) + ")" : "OFF");
-    Serial.print(" | Right:");
-    Serial.print(cmd.right > 0 ? "ON (" + String(cmd.right) + ")" : "OFF");
-    Serial.print(" | Back:");
-    Serial.println(cmd.back > 0 ? "ON (" + String(cmd.back) + ")" : "OFF");
-    Serial.println("==================================================");
-}
-
-// ---------------------------------------------------------------------------
-// Fail-safe Emergency Off
-// ---------------------------------------------------------------------------
-void applyFailSafe() {
-    MotorCommand offCmd;
-    applyMotorCommands(offCmd, "{\"left\":0,\"front\":0,\"right\":0,\"back\":0} (FAILSAFE)");
-}
-
-// ---------------------------------------------------------------------------
-// GET /cmd Poller
-// ---------------------------------------------------------------------------
-void pollCommandEndpoint() {
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("[ESP32] Wi-Fi connection lost! Engaging fail-safe.");
-        applyFailSafe();
+// ------------------------------------------------------------------------------
+// Pulse Sequencer Engine
+// ------------------------------------------------------------------------------
+void triggerHapticSequence(bool left, bool right, uint8_t pulses, uint16_t onMs, uint16_t offMs, uint32_t duty) {
+    if (pulses == 0 || (!left && !right)) {
+        stopAllMotors();
         return;
     }
 
-    http.begin(wifiClient, SERVER_CMD_URL);
-    http.setTimeout(HTTP_TIMEOUT_MS);
-    http.addHeader("Connection", "keep-alive");
+    sequencer.driveMotorLeft   = left;
+    sequencer.driveMotorRight  = right;
+    sequencer.totalPulses      = pulses;
+    sequencer.currentPulse     = 1;
+    sequencer.inOnPhase        = true;
+    sequencer.onDurationMs     = onMs;
+    sequencer.offDurationMs    = offMs;
+    sequencer.activeDuty       = duty;
+    sequencer.phaseStartTimeMs = millis();
+    sequencer.isRunning        = true;
 
-    int httpCode = http.GET();
+    // Apply immediate ON phase
+    setMotorOutputs(
+        left  ? duty : PWM_DUTY_OFF,
+        right ? duty : PWM_DUTY_OFF
+    );
+}
 
-    if (httpCode == HTTP_CODE_OK) {
-        String payload = http.getString();
-        
-        StaticJsonDocument<256> doc;
-        DeserializationError error = deserializeJson(doc, payload);
+void updateHapticSequencer() {
+    if (!sequencer.isRunning) return;
 
-        if (!error) {
-            currentCmd.left  = doc["left"]  | 0;
-            currentCmd.front = doc["front"] | 0;
-            currentCmd.right = doc["right"] | 0;
-            currentCmd.back  = doc["back"]  | 0;
+    unsigned long now = millis();
+    unsigned long elapsed = now - sequencer.phaseStartTimeMs;
 
-            applyMotorCommands(currentCmd, payload);
-        } else {
-            Serial.print("[ESP32] JSON Parsing Failed: ");
-            Serial.println(error.f_str());
-            applyFailSafe();
+    if (sequencer.inOnPhase) {
+        if (elapsed >= sequencer.onDurationMs) {
+            // Turn off for pause phase
+            setMotorOutputs(PWM_DUTY_OFF, PWM_DUTY_OFF);
+
+            if (sequencer.currentPulse >= sequencer.totalPulses) {
+                // Sequence completed
+                sequencer.isRunning = false;
+            } else {
+                // Transition to OFF phase
+                sequencer.inOnPhase        = false;
+                sequencer.phaseStartTimeMs = now;
+            }
         }
     } else {
-        Serial.print("[ESP32] HTTP GET Failed, Code: ");
-        Serial.println(httpCode);
-        applyFailSafe();
-    }
+        if (elapsed >= sequencer.offDurationMs) {
+            // Start next pulse ON phase
+            sequencer.currentPulse++;
+            sequencer.inOnPhase        = true;
+            sequencer.phaseStartTimeMs = now;
 
-    http.end();
+            setMotorOutputs(
+                sequencer.driveMotorLeft  ? sequencer.activeDuty : PWM_DUTY_OFF,
+                sequencer.driveMotorRight ? sequencer.activeDuty : PWM_DUTY_OFF
+            );
+        }
+    }
 }
 
-// ---------------------------------------------------------------------------
-// Arduino Setup & Main Loop
-// ---------------------------------------------------------------------------
+// ------------------------------------------------------------------------------
+// Command Parser & Dispatcher
+// ------------------------------------------------------------------------------
+void processSerialCommand(const char* rawCommand) {
+    // 1. Trim leading and trailing whitespace
+    while (*rawCommand == ' ' || *rawCommand == '\t' || *rawCommand == '\r' || *rawCommand == '\n') {
+        rawCommand++;
+    }
+
+    size_t len = strlen(rawCommand);
+    while (len > 0 && (rawCommand[len - 1] == ' ' || rawCommand[len - 1] == '\t' || 
+                       rawCommand[len - 1] == '\r' || rawCommand[len - 1] == '\n')) {
+        len--;
+    }
+
+    if (len == 0) return;  // Ignore empty lines
+
+    char cmd[32];
+    size_t copyLen = (len < sizeof(cmd) - 1) ? len : (sizeof(cmd) - 1);
+    strncpy(cmd, rawCommand, copyLen);
+    cmd[copyLen] = '\0';
+
+    // Convert to uppercase for deterministic matching
+    for (size_t i = 0; i < copyLen; i++) {
+        cmd[i] = toupper((unsigned char)cmd[i]);
+    }
+
+    // 2. Dispatch commands
+    if (strcmp(cmd, "START") == 0) {
+        Serial.println("[ESP32] CMD: START -> Pulsing Left & Right motors (3x)");
+        triggerHapticSequence(true, true, PULSE_COUNT_START, PULSE_ON_DURATION_MS, PULSE_OFF_DURATION_MS, PWM_DUTY_MAX);
+    }
+    else if (strcmp(cmd, "LEFT") == 0) {
+        Serial.println("[ESP32] CMD: LEFT -> Pulsing Motor 1 (GPIO 27) (2x)");
+        triggerHapticSequence(true, false, PULSE_COUNT_MANEUVER, PULSE_ON_DURATION_MS, PULSE_OFF_DURATION_MS, PWM_DUTY_MAX);
+    }
+    else if (strcmp(cmd, "RIGHT") == 0) {
+        Serial.println("[ESP32] CMD: RIGHT -> Pulsing Motor 2 (GPIO 26) (2x)");
+        triggerHapticSequence(false, true, PULSE_COUNT_MANEUVER, PULSE_ON_DURATION_MS, PULSE_OFF_DURATION_MS, PWM_DUTY_MAX);
+    }
+    else if (strcmp(cmd, "FRONT") == 0) {
+        Serial.println("[ESP32] CMD: FRONT -> Received (Phone vibrator primary channel)");
+        if (FRONT_PULSE_MOTORS) {
+            triggerHapticSequence(true, true, PULSE_COUNT_MANEUVER, PULSE_ON_DURATION_MS, PULSE_OFF_DURATION_MS, PWM_DUTY_MAX);
+        } else {
+            stopAllMotors();
+        }
+    }
+    else if (strcmp(cmd, "ARRIVAL") == 0) {
+        Serial.println("[ESP32] CMD: ARRIVAL -> Destination reached. Motors OFF.");
+        stopAllMotors();
+    }
+    else if (strcmp(cmd, "STOP") == 0) {
+        Serial.println("[ESP32] CMD: STOP -> All motors disabled immediately");
+        stopAllMotors();
+    }
+    else {
+        Serial.print("[ESP32] WARN: Unknown command ignored: \"");
+        Serial.print(cmd);
+        Serial.println("\"");
+    }
+}
+
+// ------------------------------------------------------------------------------
+// Serial Reader Loop
+// ------------------------------------------------------------------------------
+void handleSerialInput() {
+    while (Serial.available() > 0) {
+        char c = (char)Serial.read();
+
+        if (c == '\n' || c == '\r') {
+            if (rxIndex > 0) {
+                rxBuffer[rxIndex] = '\0';
+                processSerialCommand(rxBuffer);
+                rxIndex = 0;
+            }
+        } else {
+            if (rxIndex < RX_BUFFER_CAPACITY - 1) {
+                rxBuffer[rxIndex++] = c;
+            } else {
+                // Buffer overflow safety: drop and reset
+                Serial.println("[ESP32] WARN: Rx buffer overflow. Discarding line.");
+                rxIndex = 0;
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------
+// Arduino Setup
+// ------------------------------------------------------------------------------
 void setup() {
-    Serial.begin(115200);
-    delay(500);
+    // 1. Initialize Serial Interface
+    Serial.begin(SERIAL_BAUD_RATE);
+    delay(200);
 
     Serial.println();
-    Serial.println("==========================================");
-    Serial.println("      HapticGuide ESP32 Firmware          ");
-    Serial.println("==========================================");
+    Serial.println("==================================================");
+    Serial.println("       HapticGuide ESP32 Motor Controller         ");
+    Serial.println("       Arduino-ESP32 Core 3.x LEDC Driver         ");
+    Serial.println("==================================================");
 
-    // Initialize Motor PWM Pins
-    initMotorPWM(PIN_MOTOR_LEFT,  CHANNEL_LEFT);
-    initMotorPWM(PIN_MOTOR_FRONT, CHANNEL_FRONT);
-    initMotorPWM(PIN_MOTOR_RIGHT, CHANNEL_RIGHT);
-    initMotorPWM(PIN_MOTOR_BACK,  CHANNEL_BACK);
+    // 2. Initialize GPIOs for PWM via Arduino-ESP32 Core 3.x LEDC API
+    //    ledcAttach(pin, frequency, resolution)
+    bool leftAttached  = ledcAttach(PIN_MOTOR_LEFT,  PWM_FREQUENCY_HZ, PWM_RESOLUTION_BITS);
+    bool rightAttached = ledcAttach(PIN_MOTOR_RIGHT, PWM_FREQUENCY_HZ, PWM_RESOLUTION_BITS);
 
-    // Initial Failsafe Shutdown
-    applyFailSafe();
+    Serial.print("[ESP32] Motor 1 (Left)  -> GPIO ");
+    Serial.print(PIN_MOTOR_LEFT);
+    Serial.println(leftAttached ? " [OK]" : " [ATTACH FAILED]");
 
-    // Connect to Wi-Fi
-    Serial.print("[ESP32] Connecting to Wi-Fi SSID: ");
-    Serial.println(WIFI_SSID);
+    Serial.print("[ESP32] Motor 2 (Right) -> GPIO ");
+    Serial.print(PIN_MOTOR_RIGHT);
+    Serial.println(rightAttached ? " [OK]" : " [ATTACH FAILED]");
 
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    Serial.print("[ESP32] PWM Config: ");
+    Serial.print(PWM_FREQUENCY_HZ);
+    Serial.print(" Hz, ");
+    Serial.print(PWM_RESOLUTION_BITS);
+    Serial.println("-bit resolution");
 
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(250);
-        Serial.print(".");
-    }
+    // 3. Ensure both motors start in OFF state
+    stopAllMotors();
 
-    Serial.println();
-    Serial.print("[ESP32] Connected! Local IP: ");
-    Serial.println(WiFi.localIP());
-    Serial.print("[ESP32] Polling endpoint: ");
-    Serial.println(SERVER_CMD_URL);
-    Serial.print("[ESP32] Polling interval: ");
-    Serial.print(POLL_INTERVAL_MS);
-    Serial.println(" ms");
-    Serial.println("==========================================");
+    Serial.println("[ESP32] Ready. Listening for serial commands...");
+    Serial.println("==================================================");
 }
 
+// ------------------------------------------------------------------------------
+// Main Execution Loop
+// ------------------------------------------------------------------------------
 void loop() {
-    unsigned long now = millis();
-    if (now - lastPollTime >= POLL_INTERVAL_MS) {
-        lastPollTime = now;
-        pollCommandEndpoint();
-    }
+    // 1. Ingest serial commands
+    handleSerialInput();
+
+    // 2. Advance non-blocking pulse sequencer
+    updateHapticSequencer();
 }

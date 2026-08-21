@@ -17,6 +17,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import com.hapticguide.serial.HapticSerialManager
+import com.hapticguide.serial.HapticSerialTransport
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -28,6 +30,7 @@ import kotlinx.coroutines.launch
 class LocationTracker(
     private val context: Context,
     private val httpClient: NavHttpClient = NavHttpClient(),
+    val serialTransport: HapticSerialTransport = HapticSerialManager(context),
 ) : LocationListener {
 
     data class GpsUiState(
@@ -35,6 +38,7 @@ class LocationTracker(
         val isActive: Boolean = false,
         val latitude: Double? = null,
         val longitude: Double? = null,
+        val decision: NavigationDecision? = null,
     )
 
     companion object {
@@ -47,6 +51,9 @@ class LocationTracker(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val locationManager =
         context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+
+    val phoneHapticPlayer = PhoneHapticPlayer(context)
+    val navigationEventHandler = NavigationEventHandler(phoneHapticPlayer, serialTransport)
 
     private val _state = MutableStateFlow(GpsUiState())
     val state: StateFlow<GpsUiState> = _state.asStateFlow()
@@ -130,6 +137,7 @@ class LocationTracker(
             _state.value = _state.value.copy(statusText = "Acquiring…", isActive = true)
             publishLastKnown()
             startStaleWatch()
+            serialTransport.connect()
             Log.i(TAG, "Location updates started")
         } catch (e: SecurityException) {
             reportPermissionDenied()
@@ -143,17 +151,16 @@ class LocationTracker(
             runCatching { locationManager.removeUpdates(this) }
             started = false
         }
+        navigationEventHandler.reset()
         _state.value = _state.value.copy(isActive = false, statusText = "Stopped")
     }
-
-    private val phoneHapticPlayer = PhoneHapticPlayer(context)
 
     override fun onLocationChanged(location: Location) {
         if (!started) return
         lastFixAtMs = System.currentTimeMillis()
         lastReportedFault = null
         val acc = if (location.hasAccuracy()) location.accuracy else null
-        _state.value = GpsUiState(
+        _state.value = _state.value.copy(
             statusText = "Active",
             isActive = true,
             latitude = location.latitude,
@@ -161,10 +168,9 @@ class LocationTracker(
         )
         scope.launch {
             val response = httpClient.postFix(location.latitude, location.longitude, acc)
-            val pendingEvent = response?.optString("pending_haptic_event")
-            if (!pendingEvent.isNullOrEmpty() && pendingEvent != "null") {
-                phoneHapticPlayer.handleHapticEvent(pendingEvent)
-            }
+            val decision = NavigationDecision.fromJsonObject(response)
+            _state.value = _state.value.copy(decision = decision)
+            navigationEventHandler.handleDecision(decision)
         }
     }
 
