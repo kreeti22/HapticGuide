@@ -92,9 +92,6 @@ def test_get_live_endpoint(client):
     assert "HapticGuide" in response.text
     assert "leftMotor" in response.text
     assert "rightMotor" in response.text
-    assert "NAVIGATION" in response.text
-    assert "nav-modal" in response.text
-    assert "live-nav-hud" in response.text
-    assert "btn-voice-record" in response.text
-    assert "input-destination" in response.text
+    assert "phone-status-badge" in response.text
+    assert "telemetry-panel" in response.text
 

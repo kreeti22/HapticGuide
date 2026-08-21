@@ -44,13 +44,14 @@ def client():
 
 
 def test_e2e_live_dashboard_endpoint(client):
-    """Verify /live dashboard returns HTTP 200 and contains navigation elements."""
+    """Verify /live dashboard returns HTTP 200 and contains visual dashboard elements."""
     res = client.get("/live")
     assert res.status_code == 200
     assert "HapticGuide" in res.text
-    assert "live-nav-hud" in res.text
-    assert "nav-modal" in res.text
-    assert "pollNav" in res.text
+    assert "leftMotor" in res.text
+    assert "rightMotor" in res.text
+    assert "phone-status-badge" in res.text
+    assert "telemetry-panel" in res.text
 
 
 def test_e2e_navigation_flow_and_events(client):
