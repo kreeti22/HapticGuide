@@ -172,7 +172,7 @@ body {
 .product-showcase {
   position: relative;
   width: min(88vw, 740px);
-  margin: 10px auto 0;
+  margin: 32px auto 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -183,7 +183,7 @@ body {
 /* Physical Phone Component (ALWAYS in Popped-Out Foreground State) */
 .phone-wrapper {
   position: absolute;
-  top: -65px;
+  top: -45px;
   left: 50%;
   transform: translateX(-50%);
   width: clamp(210px, 44%, 330px);
@@ -1075,6 +1075,7 @@ body {
       <!-- Action Buttons -->
       <div class="modal-actions-row">
         <button class="btn-start-nav" id="btn-start-nav" onclick="startNavigation()">START NAVIGATION</button>
+        <button class="btn-primary" id="btn-demo-sim" style="padding:12px 14px" onclick="runDemoGpsSimulator()">🎮 DEMO SIMULATOR</button>
         <button class="btn-reset-nav" id="btn-reset-nav" onclick="resetNavigation()">RESET ROUTE</button>
       </div>
 
@@ -1471,6 +1472,12 @@ async function startNavigation() {
 
 async function resetNavigation() {
   try {
+    if (demoSimInterval) {
+      clearInterval(demoSimInterval);
+      demoSimInterval = null;
+      const btn = document.getElementById('btn-demo-sim');
+      if (btn) btn.textContent = '🎮 DEMO SIMULATOR';
+    }
     await fetch('/nav/reset', { method: 'POST' });
     const transcriptBox = document.getElementById('voice-transcript-box');
     if (transcriptBox) transcriptBox.style.display = 'none';
@@ -1480,6 +1487,59 @@ async function resetNavigation() {
     pollNav();
   } catch (err) {
     alert(`Error: ${err.message}`);
+  }
+}
+
+// ── Demo GPS Simulator ────────────────────────────────────────────────────
+let demoSimInterval = null;
+
+async function runDemoGpsSimulator() {
+  const btn = document.getElementById('btn-demo-sim');
+  if (demoSimInterval) {
+    clearInterval(demoSimInterval);
+    demoSimInterval = null;
+    if (btn) btn.textContent = '🎮 DEMO SIMULATOR';
+    return;
+  }
+
+  if (btn) btn.textContent = '⏹️ STOP SIM';
+
+  // Demo coordinates simulating a route walking path
+  const waypoints = [
+    { lat: 28.6315, lon: 77.2167 },
+    { lat: 28.6322, lon: 77.2172 },
+    { lat: 28.6330, lon: 77.2178 },
+    { lat: 28.6338, lon: 77.2185 },
+    { lat: 28.6345, lon: 77.2192 }
+  ];
+
+  let step = 0;
+  try {
+    await fetch('/nav/gps', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ latitude: waypoints[0].lat, longitude: waypoints[0].lon, accuracy_m: 3.0 })
+    });
+    pollNav();
+
+    demoSimInterval = setInterval(async () => {
+      step++;
+      if (step >= waypoints.length) {
+        clearInterval(demoSimInterval);
+        demoSimInterval = null;
+        if (btn) btn.textContent = '🎮 DEMO SIMULATOR';
+        return;
+      }
+      const pt = waypoints[step];
+      await fetch('/nav/gps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ latitude: pt.lat, longitude: pt.lon, accuracy_m: 2.0 })
+      });
+      pollNav();
+    }, 1500);
+  } catch (err) {
+    if (btn) btn.textContent = '🎮 DEMO SIMULATOR';
   }
 }
 
