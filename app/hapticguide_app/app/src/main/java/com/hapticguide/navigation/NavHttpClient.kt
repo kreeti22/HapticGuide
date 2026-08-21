@@ -9,7 +9,7 @@ import java.net.URL
  * Posts GPS samples to the existing FastAPI server.
  * Uses HTTP on the backend port (default 8000), not the camera TCP port.
  */
-class NavHttpClient {
+open class NavHttpClient {
 
     companion object {
         private const val TAG = "NavHttpClient"
@@ -19,7 +19,7 @@ class NavHttpClient {
     @Volatile var serverIp: String = ""
     @Volatile var httpPort: Int = 8000
 
-    fun postFix(latitude: Double, longitude: Double, accuracyM: Float?): JSONObject? {
+    open fun postFix(latitude: Double, longitude: Double, accuracyM: Float?): JSONObject? {
         val body = JSONObject().apply {
             put("latitude", latitude)
             put("longitude", longitude)
@@ -30,7 +30,7 @@ class NavHttpClient {
         return post("/nav/gps", body)
     }
 
-    fun postFault(health: String, message: String): JSONObject? {
+    open fun postFault(health: String, message: String): JSONObject? {
         val body = JSONObject().apply {
             put("health", health)
             put("message", message)
@@ -38,34 +38,77 @@ class NavHttpClient {
         return post("/nav/gps/fault", body)
     }
 
-    fun postVoice(audioBytes: ByteArray, filename: String = "voice_command.m4a"): JSONObject? {
+    open fun postVoice(audioBytes: ByteArray, filename: String = "voice_command.m4a"): JSONObject? {
         val ip = serverIp.trim()
-        if (ip.isEmpty() || httpPort <= 0) return null
+        val uploadUrl = "http://$ip:$httpPort/nav/voice"
+        Log.i("VOICE", "VOICE: upload URL = $uploadUrl")
+        Log.i("VOICE", "VOICE: file size = ${audioBytes.size} bytes")
+        Log.i("VOICE", "VOICE: MIME = audio/mp4")
+        Log.i("VOICE", "VOICE: upload started")
 
-        val url = URL("http://$ip:$httpPort/nav/voice")
+        if (ip.isEmpty() || httpPort <= 0) {
+            Log.e("VOICE", "VOICE: upload failed = server IP or port is not configured (ip='$ip', port=$httpPort)")
+            return null
+        }
+
+        val boundary = "===Boundary" + System.currentTimeMillis() + "==="
+        val lineEnd = "\r\n"
+        val twoHyphens = "--"
+
         var conn: HttpURLConnection? = null
         try {
+            val url = URL(uploadUrl)
             conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
-                connectTimeout = 10000
-                readTimeout = 10000
+                connectTimeout = 15000
+                readTimeout = 20000
                 doOutput = true
-                setRequestProperty("Content-Type", "audio/mp4")
+                doInput = true
+                useCaches = false
+                setRequestProperty("Connection", "Keep-Alive")
+                setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+                setRequestProperty("Accept", "application/json")
             }
+
             conn.outputStream.use { os ->
+                val writer = java.io.PrintWriter(java.io.OutputStreamWriter(os, Charsets.UTF_8), true)
+                // Write multipart file header with field name 'file'
+                writer.append(twoHyphens).append(boundary).append(lineEnd)
+                writer.append("Content-Disposition: form-data; name=\"file\"; filename=\"").append(filename).append("\"").append(lineEnd)
+                writer.append("Content-Type: audio/mp4").append(lineEnd)
+                writer.append(lineEnd).flush()
+
+                // Write actual audio bytes
                 os.write(audioBytes)
+                os.flush()
+
+                writer.append(lineEnd).flush()
+                writer.append(twoHyphens).append(boundary).append(twoHyphens).append(lineEnd).flush()
             }
+
             val responseCode = conn.responseCode
+            Log.i("VOICE", "VOICE: HTTP status = $responseCode")
+
             val responseBytes = if (responseCode in 200..299) {
                 conn.inputStream.use { it.readBytes() }
             } else {
                 conn.errorStream?.use { it.readBytes() }
             }
-            if (responseBytes != null && responseBytes.isNotEmpty()) {
-                return JSONObject(String(responseBytes, Charsets.UTF_8))
+
+            val responseStr = if (responseBytes != null && responseBytes.isNotEmpty()) {
+                String(responseBytes, Charsets.UTF_8)
+            } else {
+                ""
+            }
+            Log.i("VOICE", "VOICE: response = $responseStr")
+
+            if (responseStr.isNotEmpty()) {
+                return JSONObject(responseStr)
+            } else {
+                Log.w("VOICE", "VOICE: upload failed = empty server response (HTTP $responseCode)")
             }
         } catch (e: Exception) {
-            Log.w(TAG, "POST /nav/voice failed: ${e.message}")
+            Log.e("VOICE", "VOICE: upload failed = ${e.message}", e)
         } finally {
             conn?.disconnect()
         }

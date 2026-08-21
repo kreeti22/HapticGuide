@@ -69,6 +69,11 @@ class LocationTracker(
         httpClient.httpPort = httpPort
     }
 
+    fun handleExternalDecision(decision: NavigationDecision) {
+        _state.value = _state.value.copy(decision = decision)
+        navigationEventHandler.handleDecision(decision)
+    }
+
     fun hasPermission(): Boolean {
         val fine = ContextCompat.checkSelfPermission(
             context, Manifest.permission.ACCESS_FINE_LOCATION,

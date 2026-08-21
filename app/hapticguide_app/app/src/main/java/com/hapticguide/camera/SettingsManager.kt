@@ -19,7 +19,7 @@ class SettingsManager(context: Context) {
         private const val KEY_SERVER_IP     = "server_ip"
         private const val KEY_SERVER_PORT   = "server_port"
         private const val KEY_HTTP_PORT     = "http_port"
-        private const val DEFAULT_SERVER_IP = "192.168.1.100"
+        private const val DEFAULT_SERVER_IP = "192.168.1.44"
         private const val DEFAULT_PORT      = 9000
         private const val DEFAULT_HTTP_PORT = 8000
     }

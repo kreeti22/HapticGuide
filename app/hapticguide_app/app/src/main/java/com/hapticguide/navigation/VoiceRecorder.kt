@@ -4,43 +4,25 @@ import android.content.Context
 import android.media.MediaRecorder
 import android.os.Build
 import android.util.Log
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import org.json.JSONObject
 import java.io.File
 
 /**
- * Microphone voice command recorder for navigation destination input.
- * Captures short audio clips (M4A / AAC) and provides them to the upload layer.
+ * Microphone voice command audio recorder.
+ * Captures short audio clips (M4A / AAC) from the device mic and exposes the recorded file for upload.
  */
 open class VoiceRecorder(
     private val context: Context,
-    private val httpClient: NavHttpClient = NavHttpClient(),
+    val httpClient: NavHttpClient = NavHttpClient(),
 ) {
     companion object {
         private const val TAG = "VOICE"
         const val AUDIO_FILENAME = "voice_command.m4a"
     }
 
-    data class VoiceState(
-        val isRecording: Boolean = false,
-        val isProcessing: Boolean = false,
-        val statusMessage: String = "Idle",
-        val lastTranscript: String? = null,
-        val lastDestination: String? = null,
-    )
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val _state = MutableStateFlow(VoiceState())
-    val state: StateFlow<VoiceState> = _state.asStateFlow()
-
     private var recorder: MediaRecorder? = null
     private var audioFile: File? = null
+    @Volatile var isRecording: Boolean = false
+        protected set
 
     fun bindBackend(ip: String, httpPort: Int) {
         httpClient.serverIp = ip.trim()
@@ -59,7 +41,7 @@ open class VoiceRecorder(
     }
 
     open fun startRecording(): Boolean {
-        if (_state.value.isRecording) return false
+        if (isRecording) return false
 
         try {
             val file = File(context.cacheDir, AUDIO_FILENAME)
@@ -80,77 +62,42 @@ open class VoiceRecorder(
                 start()
             }
 
-            _state.value = _state.value.copy(
-                isRecording = true,
-                statusMessage = "Listening...",
-            )
+            isRecording = true
             Log.i(TAG, "VOICE: Recording started")
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start recording: ${e.message}", e)
-            _state.value = _state.value.copy(
-                isRecording = false,
-                statusMessage = "Recording error: ${e.message}",
-            )
+            isRecording = false
             return false
         }
     }
 
-    open fun stopRecordingAndSend(onResult: ((JSONObject?) -> Unit)? = null) {
-        if (!_state.value.isRecording) return
+    open fun stopRecording(): File? {
+        if (!isRecording) return null
 
         try {
             recorder?.apply {
                 stop()
                 release()
             }
-            recorder = null
-            _state.value = _state.value.copy(
-                isRecording = false,
-                isProcessing = true,
-                statusMessage = "Transcribing with Groq...",
-            )
-            Log.i(TAG, "VOICE: Recording stopped")
-
-            val file = audioFile
-            if (file != null && file.exists() && file.length() > 0) {
-                Log.i(TAG, "VOICE: Audio file created: ${file.name}")
-                scope.launch {
-                    val bytes = file.readBytes()
-                    val result = httpClient.postVoice(bytes, file.name)
-                    val ok = result?.optBoolean("ok", false) == true
-                    val transcript = result?.optString("transcript", "")
-                    val dest = result?.optJSONObject("destination")?.optString("name", "")
-
-                    if (ok && !transcript.isNullOrEmpty()) {
-                        Log.i(TAG, "VOICE COMMAND RECEIVED")
-                        Log.i(TAG, "TRANSCRIPT: $transcript")
-                    }
-
-                    _state.value = _state.value.copy(
-                        isProcessing = false,
-                        statusMessage = if (ok) "Destination: $dest" else (result?.optString("error", "Error") ?: "Error"),
-                        lastTranscript = transcript,
-                        lastDestination = dest,
-                    )
-                    onResult?.invoke(result)
-                }
-            } else {
-                _state.value = _state.value.copy(
-                    isProcessing = false,
-                    statusMessage = "No audio recorded",
-                )
-                onResult?.invoke(null)
-            }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to stop/send recording: ${e.message}", e)
-            _state.value = _state.value.copy(
-                isRecording = false,
-                isProcessing = false,
-                statusMessage = "Error: ${e.message}",
-            )
-            onResult?.invoke(null)
+            Log.e(TAG, "VOICE: Failed to stop recording: ${e.message}", e)
+        } finally {
+            recorder = null
+            isRecording = false
         }
+
+        val file = audioFile
+        val exists = file != null && file.exists()
+        val size = if (exists) file!!.length() else 0L
+
+        Log.i(TAG, "VOICE: recording stopped")
+        Log.i(TAG, "VOICE: file path = ${file?.absolutePath ?: "null"}")
+        Log.i(TAG, "VOICE: file exists = $exists")
+        Log.i(TAG, "VOICE: file size = $size bytes")
+        Log.i(TAG, "VOICE: MIME = audio/mp4")
+
+        return if (exists && size > 0) file else null
     }
 
     open fun cancelRecording() {
@@ -161,10 +108,17 @@ open class VoiceRecorder(
             }
         } catch (_: Exception) {}
         recorder = null
-        _state.value = _state.value.copy(
-            isRecording = false,
-            isProcessing = false,
-            statusMessage = "Cancelled",
-        )
+        isRecording = false
+        cleanupAudioFile()
+    }
+
+    open fun cleanupAudioFile() {
+        try {
+            audioFile?.let { file ->
+                if (file.exists()) {
+                    file.delete()
+                }
+            }
+        } catch (_: Exception) {}
     }
 }

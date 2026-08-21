@@ -6,3 +6,7 @@ ultralytics
 torch
 torchvision
 Pillow
+python-dotenv
+groq
+python-multipart
+requests

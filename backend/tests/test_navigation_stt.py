@@ -76,20 +76,20 @@ def test_detect_wake_phrase_standard_variations():
 
 def test_detect_wake_phrase_missing():
     invalid_cases = [
-        "Take me to the nearest KFC",
-        "Navigate to Central Park",
-        "Hello Google, take me home",
-        "Hey Siri, find coffee",
-        "Where is the nearest hospital",
-        "",
-        "   ",
-        None,
+        ("Take me to the nearest KFC", "Take me to the nearest KFC"),
+        ("Navigate to Central Park", "Navigate to Central Park"),
+        ("Hello Google, take me home", "Hello Google, take me home"),
+        ("Hey Siri, find coffee", "Hey Siri, find coffee"),
+        ("Where is the nearest hospital", "Where is the nearest hospital"),
+        ("", ""),
+        ("   ", ""),
+        (None, ""),
     ]
 
-    for transcript in invalid_cases:
+    for transcript, expected_remnant in invalid_cases:
         detected, remnant = detect_wake_phrase(transcript)
         assert detected is False
-        assert remnant == ""
+        assert remnant == expected_remnant
 
 
 def test_detect_wake_phrase_only_wake_phrase():
@@ -239,7 +239,7 @@ def test_process_voice_destination_success(nav_state_with_gps):
         mock_route.assert_called_once()
 
 
-def test_process_voice_destination_missing_wake_phrase(nav_state_with_gps):
+def test_process_voice_destination_direct_without_wake_phrase(nav_state_with_gps):
     mock_client = MagicMock()
     mock_response = MagicMock()
     mock_response.text = "Take me to the nearest KFC."
@@ -247,15 +247,29 @@ def test_process_voice_destination_missing_wake_phrase(nav_state_with_gps):
 
     stt_service = GroqSttService(client=mock_client)
 
-    result = process_voice_destination(
-        audio_bytes=b"fake-audio-bytes",
-        state=nav_state_with_gps,
-        stt_service=stt_service,
+    mock_candidate = PlaceCandidate(
+        name="KFC Connaught Place",
+        location=GeoPoint(latitude=28.6328, longitude=77.2197),
+        distance_m=2300.0,
+        osm_id=123456,
+        osm_type="node",
     )
 
-    assert result.ok is False
-    assert result.wake_phrase_detected is False
-    assert "Wake phrase 'Hello Haptic Guide' not detected" in (result.error or "")
+    with patch("navigation.stt.search_destination_and_update_state", return_value=mock_candidate) as mock_search, \
+         patch("navigation.stt.calculate_route_and_update_state") as mock_route:
+
+        result = process_voice_destination(
+            audio_bytes=b"fake-audio-bytes",
+            state=nav_state_with_gps,
+            stt_service=stt_service,
+        )
+
+        assert result.ok is True
+        assert result.transcript == "Take me to the nearest KFC."
+        assert result.destination_query == "nearest KFC"
+        assert result.candidate == mock_candidate
+        mock_search.assert_called_once()
+        mock_route.assert_called_once()
 
 
 def test_process_voice_destination_empty_destination(nav_state_with_gps):

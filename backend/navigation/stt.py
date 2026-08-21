@@ -19,7 +19,18 @@ import logging
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional, Sequence, Tuple
+
+try:
+    from dotenv import load_dotenv
+    _root_env = Path(__file__).resolve().parents[2] / ".env"
+    if _root_env.exists():
+        load_dotenv(dotenv_path=_root_env)
+    else:
+        load_dotenv()
+except ImportError:
+    pass
 
 from navigation.routing import calculate_route_and_update_state
 from navigation.search import search_destination_and_update_state
@@ -31,9 +42,9 @@ GROQ_WHISPER_MODEL: str = "whisper-large-v3-turbo"
 
 # Wake phrase detection patterns (case-insensitive, handles spacing/punctuation variations)
 _WAKE_PHRASE_PATTERNS: Sequence[re.Pattern] = (
-    re.compile(r"^\s*(?:hey|hello|hi)?\s*haptic\s*guide[\s,!:.-]*", re.IGNORECASE),
-    re.compile(r"^\s*(?:hey|hello|hi)?\s*hapticguide[\s,!:.-]*", re.IGNORECASE),
-    re.compile(r"^\s*(?:hey|hello|hi)?\s*haptic-guide[\s,!:.-]*", re.IGNORECASE),
+    re.compile(r"^\s*(?:hey|hello|hi|ok|okay)?\s*haptic\s*guide[\s,!:.-]*", re.IGNORECASE),
+    re.compile(r"^\s*(?:hey|hello|hi|ok|okay)?\s*hapticguide[\s,!:.-]*", re.IGNORECASE),
+    re.compile(r"^\s*(?:hey|hello|hi|ok|okay)?\s*haptic-guide[\s,!:.-]*", re.IGNORECASE),
 )
 
 # Destination lead-in removal patterns
@@ -71,8 +82,9 @@ class VoiceNavigationResult:
 
 def detect_wake_phrase(transcript: str) -> Tuple[bool, str]:
     """
-    Check if the transcript begins with the wake phrase 'Hello Haptic Guide'.
+    Check if the transcript begins with the wake phrase 'Hello Haptic Guide' or similar.
     Returns (detected, remaining_text).
+    If no wake phrase is matched, returns (False, transcript).
     """
     if not isinstance(transcript, str):
         return False, ""
@@ -88,17 +100,19 @@ def detect_wake_phrase(transcript: str) -> Tuple[bool, str]:
             remnant = remnant.lstrip(",!?:.- \t")
             return True, remnant
 
-    return False, ""
+    return False, text
 
 
 def extract_destination_query(command_text: str) -> str:
     """
-    Extract destination name or query from the command text after wake phrase.
+    Extract destination name or query from the command text.
+    Handles both direct destinations and conversational lead-ins.
 
     Examples:
         "take me to the nearest KFC" -> "nearest KFC"
         "navigate to Central Park"   -> "Central Park"
         "find coffee shop near me"   -> "coffee shop near me"
+        "Pacific Mall"               -> "Pacific Mall"
         "nearest hospital, please"   -> "nearest hospital"
     """
     if not isinstance(command_text, str):
@@ -116,6 +130,7 @@ def extract_destination_query(command_text: str) -> str:
 
     # Strip trailing polite phrases or punctuation
     text = _TRAILING_CLEANUP_PATTERN.sub("", text).strip()
+    text = text.strip("\"'.,!?:;- ")
     return text
 
 
@@ -236,25 +251,22 @@ def process_voice_destination(
             error="No speech detected in audio recording.",
         )
 
-    # 2. Wake phrase detection
+    # 2. Extract destination query (direct destination, command, or optional wake phrase)
     wake_detected, remnant = detect_wake_phrase(transcript)
-    if not wake_detected:
-        return VoiceNavigationResult(
-            ok=False,
-            transcript=transcript,
-            wake_phrase_detected=False,
-            error="Wake phrase 'Hello Haptic Guide' not detected in voice command.",
-        )
+    if wake_detected:
+        destination_query = extract_destination_query(remnant)
+    else:
+        destination_query = extract_destination_query(transcript)
+        if not destination_query:
+            destination_query = _TRAILING_CLEANUP_PATTERN.sub("", transcript).strip().strip("\"'.,!?:;- ")
 
-    # 3. Extract destination query
-    destination_query = extract_destination_query(remnant)
     if not destination_query:
         return VoiceNavigationResult(
             ok=False,
             transcript=transcript,
-            wake_phrase_detected=True,
+            wake_phrase_detected=wake_detected,
             destination_query="",
-            error="Wake phrase recognized, but no destination was specified.",
+            error="No destination was specified in voice recording.",
         )
 
     # Resolve origin

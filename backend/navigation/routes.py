@@ -311,16 +311,22 @@ async def post_voice_command(request: Request) -> JSONResponse:
     Phase 3 search and Phase 4 route calculation.
     """
     content_type = request.headers.get("content-type", "")
+    print(f"\n[NAV VOICE] request received: content-type={content_type}", flush=True)
     audio_bytes = b""
     filename = "voice_command.m4a"
 
     if "multipart/form-data" in content_type:
-        form = await request.form()
-        file_item = form.get("file") or form.get("audio")
-        if file_item is not None and hasattr(file_item, "read"):
-            audio_bytes = await file_item.read()
-            if hasattr(file_item, "filename") and file_item.filename:
-                filename = file_item.filename
+        try:
+            form = await request.form()
+            file_item = form.get("file") or form.get("audio")
+            if file_item is not None and hasattr(file_item, "read"):
+                audio_bytes = await file_item.read()
+                if hasattr(file_item, "filename") and file_item.filename:
+                    filename = file_item.filename
+            elif isinstance(file_item, bytes):
+                audio_bytes = file_item
+        except Exception as exc:
+            print(f"[NAV VOICE] Error parsing multipart form: {exc}", flush=True)
     elif "application/json" in content_type:
         try:
             body = await request.json()
@@ -328,25 +334,43 @@ async def post_voice_command(request: Request) -> JSONResponse:
                 import base64
                 audio_bytes = base64.b64decode(body["audio_base64"])
             filename = body.get("filename", filename)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[NAV VOICE] Error parsing JSON body: {exc}", flush=True)
     else:
-        audio_bytes = await request.body()
+        try:
+            audio_bytes = await request.body()
+        except Exception as exc:
+            print(f"[NAV VOICE] Error reading raw body: {exc}", flush=True)
+
+    print(f"[NAV VOICE] filename = {filename}", flush=True)
+    print(f"[NAV VOICE] content type = {content_type}", flush=True)
+    print(f"[NAV VOICE] size = {len(audio_bytes)} bytes", flush=True)
 
     if not audio_bytes or len(audio_bytes) == 0:
         with session.get_lock():
             snap = gps_status_payload(session.get_state())
+        print("[NAV VOICE] Error: empty audio bytes", flush=True)
         return JSONResponse(
             {"ok": False, "error": "No audio file or data supplied in request.", **snap},
             status_code=400,
         )
 
+    print("[NAV VOICE] Groq request started", flush=True)
     with session.get_lock():
         state = session.get_state()
         from navigation.stt import process_voice_destination
         res = process_voice_destination(audio_bytes=audio_bytes, state=state, filename=filename)
 
+        print("[NAV VOICE] transcription completed", flush=True)
+        print(f"[NAV VOICE] transcript = '{res.transcript}'", flush=True)
+        print(f"[NAV VOICE] wake_phrase_detected = {res.wake_phrase_detected}", flush=True)
+        print(f"[NAV VOICE] destination_query = '{res.destination_query}'", flush=True)
+
         if res.ok:
+            print("[NAV VOICE] navigation processing started", flush=True)
+            print(f"[NAV VOICE] destination = {res.candidate.name if res.candidate else None}", flush=True)
+            print(f"[NAV VOICE] route calculated = {res.route is not None}", flush=True)
+            print("[NAV VOICE] response sent", flush=True)
             return JSONResponse(
                 {
                     "ok": True,
@@ -369,7 +393,9 @@ async def post_voice_command(request: Request) -> JSONResponse:
                 }
             )
         else:
-            status_code = 422 if not res.wake_phrase_detected else 404 if "No destination found" in (res.error or "") else 502
+            print(f"[NAV VOICE] response error = '{res.error}'", flush=True)
+            print("[NAV VOICE] response sent", flush=True)
+            status_code = 404 if "No destination found" in (res.error or "") else 400 if ("No destination was specified" in (res.error or "") or "No speech detected" in (res.error or "")) else 502
             return JSONResponse(
                 {
                     "ok": False,

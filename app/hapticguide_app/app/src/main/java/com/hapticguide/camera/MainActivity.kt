@@ -50,6 +50,7 @@ import androidx.core.content.ContextCompat
 import android.view.KeyEvent
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.hapticguide.navigation.LocationTracker
+import com.hapticguide.navigation.NavigationDecision
 import com.hapticguide.navigation.VoiceRecorder
 import com.hapticguide.navigation.VolumeKeyVoiceTrigger
 
@@ -102,7 +103,19 @@ class MainActivity : ComponentActivity() {
         volumeKeyVoiceTrigger = VolumeKeyVoiceTrigger(
             voiceRecorder     = voiceRecorder,
             phoneHapticPlayer = locationTracker.phoneHapticPlayer,
+            onNavigationResult = { response ->
+                if (response != null && response.optBoolean("ok", false)) {
+                    val decision = NavigationDecision.fromJsonObject(response)
+                    locationTracker.handleExternalDecision(decision)
+                }
+            },
         )
+
+        // Bind backend IP & HTTP port immediately on app startup
+        val initIp = settingsManager.getServerIp()
+        val initHttp = settingsManager.getHttpPort()
+        locationTracker.bindBackend(initIp, initHttp)
+        voiceRecorder.bindBackend(initIp, initHttp)
 
         checkPermissions()
 
@@ -220,8 +233,10 @@ fun StreamerScreen(
     val senderState     by tcpSender.state.collectAsState()
     val cameraFps       by cameraManager.cameraFps.collectAsState()
     val gpsState        by locationTracker.state.collectAsState()
-    val voiceState      by voiceRecorder.state.collectAsState()
     val activationState by volumeKeyVoiceTrigger.activationState.collectAsState()
+    val statusDetail    by volumeKeyVoiceTrigger.statusDetail.collectAsState()
+    val lastDestination by volumeKeyVoiceTrigger.lastDestination.collectAsState()
+    val lastTranscript  by volumeKeyVoiceTrigger.lastTranscript.collectAsState()
 
     // Editable fields — initialised from persisted settings
     var serverIp    by remember { mutableStateOf(settingsManager.getServerIp()) }
@@ -299,18 +314,33 @@ fun StreamerScreen(
             }
             InfoRow("GPS", gpsValue, valueColor = gpsColor)
 
-            val voiceColor = if (activationState == com.hapticguide.navigation.VoiceActivationState.RECORDING || voiceState.isRecording) Color(0xFFFF5722)
-                             else if (activationState == com.hapticguide.navigation.VoiceActivationState.ARMED) Color(0xFFFFB74D)
-                             else if (voiceState.isProcessing) Color(0xFF64B5F6)
-                             else Color.White
-            val voiceMsg = if (activationState != com.hapticguide.navigation.VoiceActivationState.IDLE) {
-                "Vol Chord: ${activationState.statusText}"
+            val voiceColor = when (activationState) {
+                com.hapticguide.navigation.VoiceActivationState.RECORDING -> Color(0xFFFF5722)
+                com.hapticguide.navigation.VoiceActivationState.ARMED,
+                com.hapticguide.navigation.VoiceActivationState.WAITING_FOR_PAIR -> Color(0xFFFFB74D)
+                com.hapticguide.navigation.VoiceActivationState.STOPPING,
+                com.hapticguide.navigation.VoiceActivationState.UPLOAD_PENDING,
+                com.hapticguide.navigation.VoiceActivationState.UPLOADING,
+                com.hapticguide.navigation.VoiceActivationState.SERVER_RESPONSE -> Color(0xFF64B5F6)
+                com.hapticguide.navigation.VoiceActivationState.NAVIGATION -> Color(0xFF81C784)
+                com.hapticguide.navigation.VoiceActivationState.ERROR -> Color(0xFFEF5350)
+                com.hapticguide.navigation.VoiceActivationState.IDLE -> Color.White
+            }
+            val voiceMsg = if (statusDetail.isNotEmpty()) {
+                statusDetail
             } else {
-                voiceState.statusMessage
+                activationState.statusText
             }
             InfoRow("Voice Trigger", voiceMsg, valueColor = voiceColor)
-            if (!voiceState.lastDestination.isNullOrEmpty()) {
-                InfoRow("Destination", voiceState.lastDestination ?: "", valueColor = Color(0xFF81C784))
+            if (!lastTranscript.isNullOrEmpty()) {
+                InfoRow("Voice Heard", "\"$lastTranscript\"", valueColor = Color(0xFF90CAF9))
+            }
+            if (!lastDestination.isNullOrEmpty()) {
+                InfoRow("Destination", lastDestination ?: "", valueColor = Color(0xFF81C784))
+            }
+            val navDecision = gpsState.decision
+            if (navDecision?.currentInstruction != null) {
+                InfoRow("Instruction", navDecision.currentInstruction, valueColor = Color(0xFFFFD54F))
             }
 
             val serialState by locationTracker.serialTransport.connectionState.collectAsState()
@@ -391,18 +421,38 @@ fun StreamerScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            // ── Voice Input Button ───────────────────────────────────────────
+            // ── Voice Action Button (Dual: Tap to Speak OR Hold Vol Up + Vol Down) ──
+            val buttonText = when (activationState) {
+                com.hapticguide.navigation.VoiceActivationState.IDLE -> "🎤 VOICE DESTINATION (TAP TO SPEAK)"
+                com.hapticguide.navigation.VoiceActivationState.WAITING_FOR_PAIR -> "⏳ WAITING FOR SECOND BUTTON..."
+                com.hapticguide.navigation.VoiceActivationState.ARMED -> "⏳ HOLD BOTH BUTTONS (1s)..."
+                com.hapticguide.navigation.VoiceActivationState.RECORDING -> "🔴 RECORDING... TAP TO SEND"
+                com.hapticguide.navigation.VoiceActivationState.STOPPING -> "⏹️ FINALIZING AUDIO..."
+                com.hapticguide.navigation.VoiceActivationState.UPLOAD_PENDING,
+                com.hapticguide.navigation.VoiceActivationState.UPLOADING -> "⬆️ UPLOADING AUDIO..."
+                com.hapticguide.navigation.VoiceActivationState.SERVER_RESPONSE -> "⚙️ PROCESSING WITH GROQ STT..."
+                com.hapticguide.navigation.VoiceActivationState.NAVIGATION -> "🧭 DESTINATION: ${lastDestination ?: "STARTED"}"
+                com.hapticguide.navigation.VoiceActivationState.ERROR -> "⚠️ ${statusDetail.ifEmpty { "ERROR - TAP TO RETRY" }}"
+            }
+            val buttonColor = when (activationState) {
+                com.hapticguide.navigation.VoiceActivationState.RECORDING -> Color(0xFFE53935)
+                com.hapticguide.navigation.VoiceActivationState.NAVIGATION -> Color(0xFF2E7D32)
+                com.hapticguide.navigation.VoiceActivationState.ERROR -> Color(0xFFC62828)
+                com.hapticguide.navigation.VoiceActivationState.STOPPING,
+                com.hapticguide.navigation.VoiceActivationState.UPLOAD_PENDING,
+                com.hapticguide.navigation.VoiceActivationState.UPLOADING,
+                com.hapticguide.navigation.VoiceActivationState.SERVER_RESPONSE -> Color(0xFF1976D2)
+                else -> Color(0xFF2196F3)
+            }
+
             Button(
-                onClick = {
-                    if (voiceState.isRecording) {
-                        voiceRecorder.stopRecordingAndSend()
-                    } else {
-                        voiceRecorder.startRecording()
-                    }
-                },
+                onClick = { volumeKeyVoiceTrigger.toggleRecording() },
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = buttonColor,
+                ),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (voiceState.isRecording) "🔴 STOP RECORDING & SEND" else "🎤 VOICE DESTINATION (TAP TO SPEAK)")
+                Text(buttonText, color = Color.White)
             }
 
             Spacer(Modifier.height(8.dp))

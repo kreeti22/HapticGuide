@@ -5,12 +5,16 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class VolumeKeyVoiceTriggerTest {
@@ -21,15 +25,19 @@ class VolumeKeyVoiceTriggerTest {
     private lateinit var voiceRecorderStub: VoiceRecorderStub
     private lateinit var phoneHapticPlayerStub: PhoneHapticPlayerStub
     private lateinit var trigger: VolumeKeyVoiceTrigger
+    private var lastNavResult: JSONObject? = null
 
     @Before
     fun setUp() {
+        lastNavResult = null
         voiceRecorderStub = VoiceRecorderStub()
         phoneHapticPlayerStub = PhoneHapticPlayerStub()
         trigger = VolumeKeyVoiceTrigger(
             voiceRecorder = voiceRecorderStub,
             phoneHapticPlayer = phoneHapticPlayerStub,
             coroutineScope = testScope,
+            ioDispatcher = testDispatcher,
+            onNavigationResult = { lastNavResult = it },
         )
     }
 
@@ -84,11 +92,55 @@ class VolumeKeyVoiceTriggerTest {
         assertEquals(VoiceActivationState.RECORDING, trigger.activationState.value)
         assertTrue(voiceRecorderStub.isRecordingStarted)
         assertTrue(phoneHapticPlayerStub.vibrationPlayed)
+    }
 
-        // Release buttons
+    @Test
+    fun testReleaseStopsRecordingAndAutomaticallyUploadsSuccessfully() = testScope.runTest {
+        trigger.handleKeyDown(KeyEvent.KEYCODE_VOLUME_UP, 0)
+        trigger.handleKeyDown(KeyEvent.KEYCODE_VOLUME_DOWN, 0)
+        advanceTimeBy(1001)
+        assertEquals(VoiceActivationState.RECORDING, trigger.activationState.value)
+
+        // Configure stub response
+        val mockResponse = JSONObject().apply {
+            put("ok", true)
+            put("transcript", "Hello Haptic Guide take me to Central Park")
+            put("destination", JSONObject().put("name", "Central Park"))
+        }
+        voiceRecorderStub.customResponse = mockResponse
+
+        // Release button -> triggers STOPPING and starts automatic upload pipeline
         trigger.handleKeyUp(KeyEvent.KEYCODE_VOLUME_UP)
-        assertEquals(VoiceActivationState.READY_TO_UPLOAD, trigger.activationState.value)
         assertTrue(voiceRecorderStub.isRecordingStopped)
+
+        // Advance coroutines for upload pipeline (UPLOAD_PENDING -> UPLOADING -> SERVER_RESPONSE -> NAVIGATION)
+        advanceUntilIdle()
+
+        assertEquals(VoiceActivationState.NAVIGATION, trigger.activationState.value)
+        assertEquals("Central Park", trigger.lastDestination.value)
+        assertEquals("Hello Haptic Guide take me to Central Park", trigger.lastTranscript.value)
+        assertNotNull(lastNavResult)
+        assertTrue(lastNavResult!!.optBoolean("ok"))
+    }
+
+    @Test
+    fun testReleaseStopsRecordingAndHandlesServerError() = testScope.runTest {
+        trigger.handleKeyDown(KeyEvent.KEYCODE_VOLUME_UP, 0)
+        trigger.handleKeyDown(KeyEvent.KEYCODE_VOLUME_DOWN, 0)
+        advanceTimeBy(1001)
+        assertEquals(VoiceActivationState.RECORDING, trigger.activationState.value)
+
+        val errorResponse = JSONObject().apply {
+            put("ok", false)
+            put("error", "No destination found")
+        }
+        voiceRecorderStub.customResponse = errorResponse
+
+        trigger.handleKeyUp(KeyEvent.KEYCODE_VOLUME_UP)
+        advanceUntilIdle()
+
+        assertEquals(VoiceActivationState.ERROR, trigger.activationState.value)
+        assertEquals("No destination found", trigger.statusDetail.value)
     }
 
     @Test
@@ -126,18 +178,76 @@ class VolumeKeyVoiceTriggerTest {
         assertTrue(voiceRecorderStub.isRecordingStarted)
     }
 
-    private class VoiceRecorderStub : VoiceRecorder(DummyContext()) {
+    @Test
+    fun testEmptyAudioTriggersErrorState() = testScope.runTest {
+        trigger.handleKeyDown(KeyEvent.KEYCODE_VOLUME_UP, 0)
+        trigger.handleKeyDown(KeyEvent.KEYCODE_VOLUME_DOWN, 0)
+        advanceTimeBy(1001)
+        assertEquals(VoiceActivationState.RECORDING, trigger.activationState.value)
+
+        voiceRecorderStub.returnEmptyFile = true
+        trigger.handleKeyUp(KeyEvent.KEYCODE_VOLUME_UP)
+
+        assertEquals(VoiceActivationState.ERROR, trigger.activationState.value)
+        assertEquals("No audio recorded", trigger.statusDetail.value)
+    }
+
+    @Test
+    fun testManualRecordingStartAndToggleUpload() = testScope.runTest {
+        assertEquals(VoiceActivationState.IDLE, trigger.activationState.value)
+
+        // 1st toggle: starts recording manually
+        trigger.toggleRecording()
+        assertEquals(VoiceActivationState.RECORDING, trigger.activationState.value)
+        assertTrue(voiceRecorderStub.isRecordingStarted)
+        assertTrue(phoneHapticPlayerStub.vibrationPlayed)
+
+        val mockResponse = JSONObject().apply {
+            put("ok", true)
+            put("transcript", "Hello Haptic Guide navigate to library")
+            put("destination", JSONObject().put("name", "City Library"))
+        }
+        voiceRecorderStub.customResponse = mockResponse
+
+        // 2nd toggle: stops recording and uploads
+        trigger.toggleRecording()
+        assertTrue(voiceRecorderStub.isRecordingStopped)
+
+        advanceUntilIdle()
+        assertEquals(VoiceActivationState.NAVIGATION, trigger.activationState.value)
+        assertEquals("City Library", trigger.lastDestination.value)
+        assertEquals("Hello Haptic Guide navigate to library", trigger.lastTranscript.value)
+        assertNotNull(lastNavResult)
+        assertTrue(lastNavResult!!.optBoolean("ok"))
+    }
+
+    private class VoiceRecorderStub : VoiceRecorder(DummyContext(), NavHttpClientStub()) {
         var isRecordingStarted = false
         var isRecordingStopped = false
+        var returnEmptyFile = false
+        var customResponse: JSONObject? = null
 
         override fun startRecording(): Boolean {
             isRecordingStarted = true
+            isRecording = true
             return true
         }
 
-        override fun stopRecordingAndSend(onResult: ((org.json.JSONObject?) -> Unit)?) {
+        override fun stopRecording(): File? {
             isRecordingStopped = true
-            onResult?.invoke(null)
+            isRecording = false
+            if (returnEmptyFile) return null
+            val file = File(DummyContext().cacheDir, AUDIO_FILENAME)
+            file.writeBytes(byteArrayOf(1, 2, 3, 4))
+            (httpClient as NavHttpClientStub).responseToReturn = customResponse
+            return file
+        }
+    }
+
+    private class NavHttpClientStub : NavHttpClient() {
+        var responseToReturn: JSONObject? = null
+        override fun postVoice(audioBytes: ByteArray, filename: String): JSONObject? {
+            return responseToReturn
         }
     }
 
@@ -149,8 +259,8 @@ class VolumeKeyVoiceTriggerTest {
     }
 
     private class DummyContext : android.content.ContextWrapper(null) {
-        override fun getCacheDir(): java.io.File {
-            val dir = java.io.File(System.getProperty("java.io.tmpdir"), "haptic_test_cache")
+        override fun getCacheDir(): File {
+            val dir = File(System.getProperty("java.io.tmpdir"), "haptic_test_cache")
             dir.mkdirs()
             return dir
         }
