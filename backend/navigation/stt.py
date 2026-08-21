@@ -180,10 +180,11 @@ class GroqSttService:
 
         client = self._get_client()
         try:
-            # Send (filename, bytes) tuple to Groq audio transcription API
+            # Send (filename, bytes) tuple to Groq audio transcription API (enforce English output)
             response = client.audio.transcriptions.create(
                 file=(filename, audio_bytes),
                 model=self.model,
+                language="en",
                 temperature=0,
                 response_format="verbose_json",
             )

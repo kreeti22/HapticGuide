@@ -175,6 +175,7 @@ def test_groq_stt_transcription_success():
     mock_client.audio.transcriptions.create.assert_called_once_with(
         file=("audio.m4a", b"fake-audio-bytes"),
         model=GROQ_WHISPER_MODEL,
+        language="en",
         temperature=0,
         response_format="verbose_json",
     )

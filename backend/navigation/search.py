@@ -250,6 +250,7 @@ class OverpassSearchService(DestinationSearchService):
         self.default_radius_m = default_radius_m
         self.timeout_s = timeout_s
         self.user_agent = user_agent
+        self.is_custom_requester = http_requester is not None
         self._http_requester = http_requester or self._default_http_post
 
     def _default_http_post(self, url: str, query_ql: str, timeout_s: float) -> str:
@@ -267,6 +268,57 @@ class OverpassSearchService(DestinationSearchService):
         with urllib.request.urlopen(req, timeout=timeout_s) as response:
             return response.read().decode("utf-8", errors="replace")
 
+    def _search_nominatim(self, clean_query: str, origin: GeoPoint) -> List[PlaceCandidate]:
+        """Fast geocoding lookup via OpenStreetMap Nominatim with origin bias."""
+        params = {
+            "q": clean_query,
+            "format": "json",
+            "limit": 5,
+            "viewbox": f"{origin.longitude-0.5},{origin.latitude+0.5},{origin.longitude+0.5},{origin.latitude-0.5}",
+        }
+        url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(params)
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": self.user_agent,
+                "Accept": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="replace"))
+                if isinstance(data, list) and len(data) > 0:
+                    candidates: List[PlaceCandidate] = []
+                    for item in data:
+                        if not isinstance(item, dict):
+                            continue
+                        try:
+                            lat = float(item["lat"])
+                            lon = float(item["lon"])
+                            disp = item.get("display_name", "")
+                            disp_first = disp.split(",")[0] if isinstance(disp, str) and disp else clean_query
+                            name = item.get("name") or disp_first or clean_query
+                            dist = haversine_distance_m(origin.latitude, origin.longitude, lat, lon)
+                            candidates.append(
+                                PlaceCandidate(
+                                    name=str(name),
+                                    location=GeoPoint(latitude=lat, longitude=lon),
+                                    distance_m=round(dist, 1),
+                                    osm_id=item.get("osm_id"),
+                                    osm_type=item.get("osm_type"),
+                                    tags={str(k): str(v) for k, v in item.items() if isinstance(v, (str, int, float))},
+                                )
+                            )
+                        except (TypeError, ValueError, KeyError):
+                            continue
+                    if candidates:
+                        candidates.sort(key=lambda c: (c.distance_m if c.distance_m is not None else float("inf")))
+                        logger.info("Nominatim search resolved '%s' to '%s' (%.1fm)", clean_query, candidates[0].name, candidates[0].distance_m)
+                        return candidates
+        except Exception as exc:
+            logger.debug("Nominatim search skipped: %s", exc)
+        return []
+
     def search_all_nearby(
         self,
         query: str,
@@ -274,7 +326,8 @@ class OverpassSearchService(DestinationSearchService):
         radius_m: Optional[int] = None,
     ) -> List[PlaceCandidate]:
         """
-        Query Overpass for all matching places within radius_m and return sorted list.
+        Query for matching places within radius_m and return sorted list.
+        First tries Nominatim fast geocoding, then falls back to Overpass mirrors.
         """
         if not isinstance(query, str) or not query.strip():
             raise ValueError("Query string must be non-empty.")
@@ -287,6 +340,12 @@ class OverpassSearchService(DestinationSearchService):
         if not clean:
             raise ValueError("Query string contains no searchable keywords.")
 
+        # Try Nominatim fast geocoding in production mode
+        if not self.is_custom_requester:
+            nom_results = self._search_nominatim(clean, origin)
+            if nom_results:
+                return nom_results
+
         radius = radius_m if radius_m is not None and radius_m > 0 else self.default_radius_m
         overpass_ql = build_overpass_query(
             clean_query=clean,
@@ -295,17 +354,34 @@ class OverpassSearchService(DestinationSearchService):
             timeout_s=int(self.timeout_s),
         )
 
-        try:
-            raw_response = self._http_requester(self.endpoint, overpass_ql, self.timeout_s)
-        except urllib.error.HTTPError as exc:
-            logger.warning("Overpass HTTP error %d: %s", exc.code, exc.reason)
-            raise DestinationSearchError(f"Overpass service error (HTTP {exc.code})") from exc
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            logger.warning("Overpass connection failure: %s", exc)
-            raise DestinationSearchError(f"Overpass network failure: {exc}") from exc
-        except Exception as exc:
-            logger.warning("Overpass search error: %s", exc)
-            raise DestinationSearchError(f"Overpass request failed: {exc}") from exc
+        endpoints = [self.endpoint]
+        if not self.is_custom_requester and self.endpoint == DEFAULT_OVERPASS_URL:
+            endpoints.extend([
+                "https://overpass.kumi.ai/api/interpreter",
+                "https://overpass.private.coffee/api/interpreter",
+            ])
+
+        last_error = None
+        raw_response = None
+        for ep in endpoints:
+            try:
+                raw_response = self._http_requester(ep, overpass_ql, self.timeout_s)
+                if raw_response:
+                    break
+            except urllib.error.HTTPError as exc:
+                logger.warning("Overpass HTTP error %d at %s: %s", exc.code, ep, exc.reason)
+                last_error = DestinationSearchError(f"Overpass service error (HTTP {exc.code})")
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                logger.warning("Overpass connection failure at %s: %s", ep, exc)
+                last_error = DestinationSearchError(f"Overpass network failure: {exc}")
+            except Exception as exc:
+                logger.warning("Overpass search error at %s: %s", ep, exc)
+                last_error = DestinationSearchError(f"Overpass request failed: {exc}")
+
+        if raw_response is None:
+            if last_error:
+                raise last_error
+            raise DestinationSearchError("Overpass network failure: connection timed out.")
 
         try:
             parsed_json = json.loads(raw_response)

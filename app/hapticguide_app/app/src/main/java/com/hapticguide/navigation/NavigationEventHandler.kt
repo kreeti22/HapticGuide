@@ -68,8 +68,8 @@ class NavigationEventHandler(
 
         when (event) {
             NavigationEvent.START -> {
-                // Contract: START triggers phone-front vibrator + belt motors
-                phoneHapticPlayer.handleHapticEvent("NAVIGATION_START")
+                // User requested ONLY F:255 haptics. Disabling start pulse.
+                // phoneHapticPlayer.handleHapticEvent("NAVIGATION_START")
                 serialTransport.send("START")
             }
             NavigationEvent.LEFT -> {
@@ -81,8 +81,8 @@ class NavigationEventHandler(
                 serialTransport.send("RIGHT")
             }
             NavigationEvent.FRONT -> {
-                // Contract: FRONT triggers phone-front vibrator + serial command
-                phoneHapticPlayer.handleHapticEvent("NAVIGATION_FRONT")
+                // User requested ONLY F:255 haptics. Disabling navigation front haptics.
+                // phoneHapticPlayer.handleHapticEvent("NAVIGATION_FRONT")
                 serialTransport.send("FRONT")
             }
             NavigationEvent.ARRIVAL -> {

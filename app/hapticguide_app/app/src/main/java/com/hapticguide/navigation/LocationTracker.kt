@@ -44,7 +44,7 @@ class LocationTracker(
     companion object {
         private const val TAG = "LocationTracker"
         private const val MIN_INTERVAL_MS = 1000L
-        private const val MIN_DISTANCE_M = 1f
+        private const val MIN_DISTANCE_M = 0f
         private const val STALE_AFTER_MS = 8_000L
     }
 
@@ -63,6 +63,7 @@ class LocationTracker(
     @Volatile private var startedAtMs = 0L
     @Volatile private var lastReportedFault: String? = null
     private var staleWatch: Job? = null
+    private var progressWatch: Job? = null
 
     fun bindBackend(ip: String, httpPort: Int) {
         httpClient.serverIp = ip.trim()
@@ -135,6 +136,15 @@ class LocationTracker(
                     Looper.getMainLooper(),
                 )
             }
+            if (locationManager.isProviderEnabled(LocationManager.PASSIVE_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                    LocationManager.PASSIVE_PROVIDER,
+                    MIN_INTERVAL_MS,
+                    MIN_DISTANCE_M,
+                    this,
+                    Looper.getMainLooper(),
+                )
+            }
             started = true
             startedAtMs = System.currentTimeMillis()
             lastFixAtMs = 0L
@@ -142,6 +152,7 @@ class LocationTracker(
             _state.value = _state.value.copy(statusText = "Acquiring…", isActive = true)
             publishLastKnown()
             startStaleWatch()
+            startProgressWatch()
             serialTransport.connect()
             Log.i(TAG, "Location updates started")
         } catch (e: SecurityException) {
@@ -152,6 +163,8 @@ class LocationTracker(
     fun stop() {
         staleWatch?.cancel()
         staleWatch = null
+        progressWatch?.cancel()
+        progressWatch = null
         if (started) {
             runCatching { locationManager.removeUpdates(this) }
             started = false
@@ -207,11 +220,9 @@ class LocationTracker(
         val last = runCatching {
             locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
                 ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                ?: locationManager.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER)
         }.getOrNull() ?: return
-        val age = System.currentTimeMillis() - last.time
-        if (age in 0 until STALE_AFTER_MS) {
-            onLocationChanged(last)
-        }
+        onLocationChanged(last)
     }
 
     private fun startStaleWatch() {
@@ -221,7 +232,12 @@ class LocationTracker(
                 delay(2_000)
                 val last = lastFixAtMs
                 val now = System.currentTimeMillis()
-                if (last == 0L) {
+                if (last == 0L || now - last > 3_000L) {
+                    // Fallback to last known position if no fresh callback fix arrived
+                    publishLastKnown()
+                }
+                val freshLast = lastFixAtMs
+                if (freshLast == 0L) {
                     if (now - startedAtMs > STALE_AFTER_MS) {
                         if (lastReportedFault != "LOCATION_UNAVAILABLE") {
                             lastReportedFault = "LOCATION_UNAVAILABLE"
@@ -229,7 +245,7 @@ class LocationTracker(
                         }
                         _state.value = _state.value.copy(statusText = "Unavailable")
                     }
-                } else if (now - last > STALE_AFTER_MS) {
+                } else if (now - freshLast > STALE_AFTER_MS) {
                     if (lastReportedFault != "STALE") {
                         lastReportedFault = "STALE"
                         httpClient.postFault("STALE", "Location older than ${STALE_AFTER_MS}ms")
@@ -238,6 +254,23 @@ class LocationTracker(
                         statusText = "Stale",
                         isActive = true,
                     )
+                }
+            }
+        }
+    }
+
+    private fun startProgressWatch() {
+        progressWatch?.cancel()
+        progressWatch = scope.launch {
+            while (isActive && started) {
+                delay(1_000)
+                val json = httpClient.getProgress()
+                if (json != null) {
+                    val decision = NavigationDecision.fromJsonObject(json)
+                    if (decision.active) {
+                        _state.value = _state.value.copy(decision = decision)
+                        navigationEventHandler.handleDecision(decision)
+                    }
                 }
             }
         }

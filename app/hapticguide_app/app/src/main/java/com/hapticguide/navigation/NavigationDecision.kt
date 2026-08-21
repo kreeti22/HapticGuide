@@ -23,6 +23,8 @@ data class NavigationDecision(
     val gpsHealth: String = "NONE",
     val gpsDetail: String? = null,
 ) {
+    val active: Boolean get() = status != "IDLE" && status != "FINISHED"
+
     companion object {
         fun fromJsonObject(json: JSONObject?): NavigationDecision {
             if (json == null) return NavigationDecision()

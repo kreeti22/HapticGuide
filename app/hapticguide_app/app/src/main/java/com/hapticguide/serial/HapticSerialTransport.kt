@@ -21,6 +21,11 @@ interface HapticSerialTransport {
     val connectionState: StateFlow<SerialConnectionState>
 
     /**
+     * Last message/acknowledgement received from ESP32 over serial.
+     */
+    val lastRxMessage: StateFlow<String>
+
+    /**
      * Connect to the ESP32 serial interface.
      * @return true if connection succeeded, false otherwise.
      */

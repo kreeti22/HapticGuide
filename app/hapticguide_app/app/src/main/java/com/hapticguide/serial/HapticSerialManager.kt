@@ -23,9 +23,13 @@ class HapticSerialManager(context: Context) : HapticSerialTransport {
     private val usbTransport = UsbSerialTransport(context)
     private val stubTransport = StubSerialTransport()
 
-    // Defaults to USB transport; delegates to stub if USB not attached or fails
+    @Volatile var useStubMode: Boolean = false
+
     override val connectionState: StateFlow<SerialConnectionState>
-        get() = if (usbTransport.isConnected()) usbTransport.connectionState else stubTransport.connectionState
+        get() = if (usbTransport.isConnected() || !useStubMode) usbTransport.connectionState else stubTransport.connectionState
+
+    override val lastRxMessage: StateFlow<String>
+        get() = if (usbTransport.isConnected() || !useStubMode) usbTransport.lastRxMessage else stubTransport.lastRxMessage
 
     override fun connect(): Boolean {
         val usbOk = usbTransport.connect()
@@ -33,8 +37,12 @@ class HapticSerialManager(context: Context) : HapticSerialTransport {
             Log.i(TAG, "Connected via USB OTG Serial")
             return true
         }
-        Log.i(TAG, "USB device not available; using Stub serial transport")
-        return stubTransport.connect()
+        if (useStubMode) {
+            Log.i(TAG, "USB device not available; using Stub serial transport")
+            return stubTransport.connect()
+        }
+        Log.i(TAG, "USB device not connected")
+        return false
     }
 
     override fun disconnect() {
@@ -48,8 +56,10 @@ class HapticSerialManager(context: Context) : HapticSerialTransport {
 
         return if (usbTransport.isConnected()) {
             usbTransport.send(cleanCmd)
-        } else {
+        } else if (useStubMode) {
             stubTransport.send(cleanCmd)
+        } else {
+            false
         }
     }
 
@@ -65,7 +75,7 @@ class HapticSerialManager(context: Context) : HapticSerialTransport {
     }
 
     override fun isConnected(): Boolean {
-        return usbTransport.isConnected() || stubTransport.isConnected()
+        return usbTransport.isConnected() || (useStubMode && stubTransport.isConnected())
     }
 
     // ── Manual Test / Debug Helpers ──────────────────────────────────────────

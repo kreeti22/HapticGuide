@@ -275,6 +275,7 @@ class OsrmRoutingService(RoutingService):
         self.profile = profile
         self.timeout_s = timeout_s
         self.user_agent = user_agent
+        self.is_custom_requester = http_requester is not None
         self._http_requester = http_requester or self._default_http_get
 
     def _default_http_get(self, url: str, timeout_s: float) -> str:
@@ -306,19 +307,32 @@ class OsrmRoutingService(RoutingService):
         if not (-90.0 <= destination.latitude <= 90.0 and -180.0 <= destination.longitude <= 180.0):
             raise ValueError(f"Destination coordinates out of range: {destination}")
 
-        url = build_osrm_url(origin, destination, base_url=self.base_url, profile=self.profile)
+        base_urls = [self.base_url]
+        if not self.is_custom_requester and self.base_url == DEFAULT_OSRM_URL:
+            base_urls.append("https://routing.openstreetmap.de/routed-car")
 
-        try:
-            raw_response = self._http_requester(url, self.timeout_s)
-        except urllib.error.HTTPError as exc:
-            logger.warning("OSRM HTTP error %d: %s", exc.code, exc.reason)
-            raise RouteCalculationError(f"OSRM service error (HTTP {exc.code})") from exc
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            logger.warning("OSRM connection failure: %s", exc)
-            raise RouteCalculationError(f"OSRM network failure: {exc}") from exc
-        except Exception as exc:
-            logger.warning("OSRM request error: %s", exc)
-            raise RouteCalculationError(f"OSRM request failed: {exc}") from exc
+        last_error = None
+        raw_response = None
+        for b_url in base_urls:
+            url = build_osrm_url(origin, destination, base_url=b_url, profile=self.profile)
+            try:
+                raw_response = self._http_requester(url, self.timeout_s)
+                if raw_response:
+                    break
+            except urllib.error.HTTPError as exc:
+                logger.warning("OSRM HTTP error %d at %s: %s", exc.code, b_url, exc.reason)
+                last_error = RouteCalculationError(f"OSRM service error (HTTP {exc.code})")
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                logger.warning("OSRM connection failure at %s: %s", b_url, exc)
+                last_error = RouteCalculationError(f"OSRM network failure: {exc}")
+            except Exception as exc:
+                logger.warning("OSRM request error at %s: %s", b_url, exc)
+                last_error = RouteCalculationError(f"OSRM request failed: {exc}")
+
+        if raw_response is None:
+            if last_error:
+                raise last_error
+            raise RouteCalculationError("OSRM network failure: request timed out.")
 
         try:
             parsed_json = json.loads(raw_response)

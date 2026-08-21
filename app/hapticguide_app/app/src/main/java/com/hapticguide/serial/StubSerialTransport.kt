@@ -19,6 +19,9 @@ class StubSerialTransport : HapticSerialTransport {
     private val _connectionState = MutableStateFlow(SerialConnectionState.CONNECTED)
     override val connectionState: StateFlow<SerialConnectionState> = _connectionState.asStateFlow()
 
+    private val _lastRxMessage = MutableStateFlow("")
+    override val lastRxMessage: StateFlow<String> = _lastRxMessage.asStateFlow()
+
     private val sentCommandHistory = mutableListOf<String>()
 
     override fun connect(): Boolean {

@@ -11,6 +11,7 @@
 // ------------------------------------------------------------------------------
 const uint8_t PIN_MOTOR_LEFT  = 27;  // Motor 1 (Left axis)
 const uint8_t PIN_MOTOR_RIGHT = 26;  // Motor 2 (Right axis)
+const uint8_t PIN_LED_BUILTIN = 2;   // ESP32 Onboard Status LED (GPIO 2)
 
 // ------------------------------------------------------------------------------
 // Serial Configuration
@@ -22,7 +23,7 @@ const uint32_t SERIAL_BAUD_RATE = 115200;
 // ------------------------------------------------------------------------------
 const uint32_t PWM_FREQUENCY_HZ    = 5000;  // 5 kHz
 const uint8_t  PWM_RESOLUTION_BITS = 8;     // 8-bit (0 - 255)
-const uint32_t PWM_DUTY_MAX         = 255;  // 100% duty cycle
+const uint32_t PWM_DUTY_MAX         = 150;  // PWM value 150 for both motors
 const uint32_t PWM_DUTY_OFF         = 0;    // Motor off
 
 // ------------------------------------------------------------------------------
@@ -58,11 +59,20 @@ static HapticSequencer sequencer = {
 };
 
 // ------------------------------------------------------------------------------
-// Serial Buffer Management
+// Serial Buffer & Activity Tracking
 // ------------------------------------------------------------------------------
 const size_t RX_BUFFER_CAPACITY = 64;
 static char   rxBuffer[RX_BUFFER_CAPACITY];
 static size_t rxIndex = 0;
+
+static void blinkStatusLed(uint8_t times = 1, uint16_t delayMs = 50) {
+    for (uint8_t i = 0; i < times; i++) {
+        digitalWrite(PIN_LED_BUILTIN, LOW);
+        delay(delayMs);
+        digitalWrite(PIN_LED_BUILTIN, HIGH);
+        delay(delayMs);
+    }
+}
 
 // ------------------------------------------------------------------------------
 // Low-Level Motor Control (Arduino-ESP32 Core 3.x API)
@@ -112,7 +122,6 @@ static void updateHapticSequencer() {
     if (sequencer.inOnPhase) {
         if (elapsed >= sequencer.onDurationMs) {
             setMotorOutputs(PWM_DUTY_OFF, PWM_DUTY_OFF);
-
             if (sequencer.currentPulse >= sequencer.totalPulses) {
                 sequencer.isRunning = false;
             } else {
@@ -162,7 +171,34 @@ static void processSerialCommand(const char* rawCommand) {
     Serial.print("RX: ");
     Serial.println(cmd);
 
-    if (strcmp(cmd, "START") == 0) {
+    // Flash built-in LED on every serial command received
+    digitalWrite(PIN_LED_BUILTIN, LOW);
+    delay(20);
+    digitalWrite(PIN_LED_BUILTIN, HIGH);
+
+    int l = 0, f = 0, r = 0, b = 0;
+    if (sscanf(cmd, "M,%d,%d,%d,%d", &l, &f, &r, &b) == 4) {
+        if (l == 0 && f == 0 && r == 0 && b == 0) {
+            stopAllMotors();
+            Serial.println("[ESP32] OK: STOP");
+        } else {
+            bool driveL = (l > 0);
+            bool driveR = (r > 0);
+            uint32_t dutyL = driveL ? (uint32_t)l : 0;
+            uint32_t dutyR = driveR ? (uint32_t)r : 0;
+            if (driveL || driveR) {
+                uint32_t duty = (dutyL > 0) ? dutyL : dutyR;
+                triggerHapticSequence(driveL, driveR, 1, PULSE_ON_DURATION_MS, PULSE_OFF_DURATION_MS, duty);
+                if (driveL) Serial.println("[ESP32] OK: LEFT MOTOR");
+                if (driveR) Serial.println("[ESP32] OK: RIGHT MOTOR");
+            }
+        }
+    }
+    else if (strcmp(cmd, "PING") == 0) {
+        Serial.println("[ESP32] PONG - Serial Communication Active");
+        blinkStatusLed(3, 50);
+    }
+    else if (strcmp(cmd, "START") == 0) {
         Serial.println("[ESP32] CMD: START -> Pulsing Left & Right motors (3x)");
         triggerHapticSequence(true, true, PULSE_COUNT_START, PULSE_ON_DURATION_MS, PULSE_OFF_DURATION_MS, PWM_DUTY_MAX);
     }
@@ -225,6 +261,9 @@ static void handleSerialInput() {
 // Setup & Loop
 // ------------------------------------------------------------------------------
 void setup() {
+    pinMode(PIN_LED_BUILTIN, OUTPUT);
+    digitalWrite(PIN_LED_BUILTIN, HIGH);
+
     Serial.begin(SERIAL_BAUD_RATE);
     delay(200);
 

@@ -62,6 +62,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var locationTracker:        LocationTracker
     private lateinit var voiceRecorder:          VoiceRecorder
     private lateinit var volumeKeyVoiceTrigger:  VolumeKeyVoiceTrigger
+    private lateinit var commandPoller:          com.hapticguide.navigation.CommandPoller
 
     private var isCameraPermissionGranted by mutableStateOf(false)
     private var isLocationPermissionGranted by mutableStateOf(false)
@@ -100,6 +101,10 @@ class MainActivity : ComponentActivity() {
         )
         locationTracker = LocationTracker(this)
         voiceRecorder   = VoiceRecorder(this)
+        commandPoller   = com.hapticguide.navigation.CommandPoller(
+            phoneHapticPlayer = locationTracker.phoneHapticPlayer,
+            serialTransport   = locationTracker.serialTransport,
+        )
         volumeKeyVoiceTrigger = VolumeKeyVoiceTrigger(
             voiceRecorder     = voiceRecorder,
             phoneHapticPlayer = locationTracker.phoneHapticPlayer,
@@ -116,6 +121,10 @@ class MainActivity : ComponentActivity() {
         val initHttp = settingsManager.getHttpPort()
         locationTracker.bindBackend(initIp, initHttp)
         voiceRecorder.bindBackend(initIp, initHttp)
+        commandPoller.bindBackend(initIp, initHttp)
+
+        // Attempt USB serial connection immediately on app launch
+        locationTracker.serialTransport.connect()
 
         checkPermissions()
 
@@ -140,6 +149,7 @@ class MainActivity : ComponentActivity() {
                         locationTracker       = locationTracker,
                         voiceRecorder         = voiceRecorder,
                         volumeKeyVoiceTrigger = volumeKeyVoiceTrigger,
+                        commandPoller         = commandPoller,
                     )
                 }
             }
@@ -192,18 +202,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startGpsUpdates() {
-        locationTracker.start(
-            settingsManager.getServerIp(),
-            settingsManager.getHttpPort(),
-        )
-        voiceRecorder.bindBackend(
-            settingsManager.getServerIp(),
-            settingsManager.getHttpPort(),
-        )
+        val ip = settingsManager.getServerIp()
+        val http = settingsManager.getHttpPort()
+        locationTracker.start(ip, http)
+        voiceRecorder.bindBackend(ip, http)
+        commandPoller.start(ip, http)
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        commandPoller.stop()
         volumeKeyVoiceTrigger.reset()
         voiceRecorder.cancelRecording()
         locationTracker.stop()
@@ -226,6 +234,7 @@ fun StreamerScreen(
     locationTracker:       LocationTracker,
     voiceRecorder:         VoiceRecorder,
     volumeKeyVoiceTrigger: VolumeKeyVoiceTrigger,
+    commandPoller:         com.hapticguide.navigation.CommandPoller,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val focusManager   = LocalFocusManager.current
@@ -237,6 +246,7 @@ fun StreamerScreen(
     val statusDetail    by volumeKeyVoiceTrigger.statusDetail.collectAsState()
     val lastDestination by volumeKeyVoiceTrigger.lastDestination.collectAsState()
     val lastTranscript  by volumeKeyVoiceTrigger.lastTranscript.collectAsState()
+    val cmdState        by commandPoller.state.collectAsState()
 
     // Editable fields — initialised from persisted settings
     var serverIp    by remember { mutableStateOf(settingsManager.getServerIp()) }
@@ -314,6 +324,10 @@ fun StreamerScreen(
             }
             InfoRow("GPS", gpsValue, valueColor = gpsColor)
 
+            val activeMotors = cmdState.left > 0 || cmdState.front > 0 || cmdState.right > 0 || cmdState.back > 0
+            val motorVal = "L: ${cmdState.left} | F: ${cmdState.front} | R: ${cmdState.right} | B: ${cmdState.back}"
+            InfoRow("Belt Motors", motorVal, valueColor = if (activeMotors) Color(0xFFFFB74D) else Color.LightGray)
+
             val voiceColor = when (activationState) {
                 com.hapticguide.navigation.VoiceActivationState.RECORDING -> Color(0xFFFF5722)
                 com.hapticguide.navigation.VoiceActivationState.ARMED,
@@ -344,6 +358,7 @@ fun StreamerScreen(
             }
 
             val serialState by locationTracker.serialTransport.connectionState.collectAsState()
+            val esp32RxMessage by locationTracker.serialTransport.lastRxMessage.collectAsState()
             val serialColor = when (serialState) {
                 com.hapticguide.serial.SerialConnectionState.CONNECTED -> Color(0xFF4CAF50)
                 com.hapticguide.serial.SerialConnectionState.CONNECTING -> Color(0xFFFFB74D)
@@ -351,6 +366,8 @@ fun StreamerScreen(
                 com.hapticguide.serial.SerialConnectionState.DISCONNECTED -> Color.LightGray
             }
             InfoRow("ESP32 Serial", serialState.statusText, valueColor = serialColor)
+            val rxDisplay = if (esp32RxMessage.isNotEmpty()) esp32RxMessage else "Listening for ESP32..."
+            InfoRow("ESP32 Rx Debug", rxDisplay, valueColor = if (esp32RxMessage.isNotEmpty()) Color(0xFF81C784) else Color.LightGray)
 
             Spacer(Modifier.height(12.dp))
             HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
@@ -369,6 +386,7 @@ fun StreamerScreen(
                         val http = httpPort.toIntOrNull() ?: settingsManager.getHttpPort()
                         locationTracker.bindBackend(it.trim(), http)
                         voiceRecorder.bindBackend(it.trim(), http)
+                        commandPoller.bindBackend(it.trim(), http)
                     },
                     label         = { Text("Server IP", color = Color.LightGray) },
                     singleLine    = true,
@@ -406,6 +424,7 @@ fun StreamerScreen(
                         settingsManager.setHttpPort(p)
                         locationTracker.bindBackend(serverIp.trim(), p)
                         voiceRecorder.bindBackend(serverIp.trim(), p)
+                        commandPoller.bindBackend(serverIp.trim(), p)
                     }
                 },
                 label         = { Text("HTTP Port (GPS/Voice)", color = Color.LightGray) },
@@ -469,6 +488,7 @@ fun StreamerScreen(
                         val http = httpPort.toIntOrNull() ?: settingsManager.getHttpPort()
                         locationTracker.start(serverIp.trim(), http)
                         voiceRecorder.bindBackend(serverIp.trim(), http)
+                        commandPoller.start(serverIp.trim(), http)
                         cameraManager.startStreaming(serverIp.trim(), port)
                     },
                     modifier = Modifier.weight(1f),
@@ -477,7 +497,10 @@ fun StreamerScreen(
                     Text("START")
                 }
                 Button(
-                    onClick  = { cameraManager.stopStreaming() },
+                    onClick  = {
+                        cameraManager.stopStreaming()
+                        commandPoller.stop()
+                    },
                     modifier = Modifier.weight(1f),
                     enabled  = cameraManager.isStreaming,
                 ) {
@@ -505,25 +528,31 @@ fun StreamerScreen(
                     Text("START", fontSize = 9.sp)
                 }
                 Button(
-                    onClick = { locationTracker.serialTransport.send("LEFT") },
+                    onClick = { locationTracker.serialTransport.send("M,150,0,0,0") },
                     modifier = Modifier.weight(1f),
                 ) {
                     Text("LEFT", fontSize = 9.sp)
                 }
                 Button(
-                    onClick = { locationTracker.serialTransport.send("FRONT") },
+                    onClick = {
+                        locationTracker.phoneHapticPlayer.playFrontManeuver()
+                        locationTracker.serialTransport.send("M,0,0,0,0")
+                    },
                     modifier = Modifier.weight(1f),
                 ) {
                     Text("FRONT", fontSize = 9.sp)
                 }
                 Button(
-                    onClick = { locationTracker.serialTransport.send("RIGHT") },
+                    onClick = { locationTracker.serialTransport.send("M,0,0,150,0") },
                     modifier = Modifier.weight(1f),
                 ) {
                     Text("RIGHT", fontSize = 9.sp)
                 }
                 Button(
-                    onClick = { locationTracker.serialTransport.send("STOP") },
+                    onClick = {
+                        locationTracker.phoneHapticPlayer.stopVibration()
+                        locationTracker.serialTransport.send("M,0,0,0,0")
+                    },
                     modifier = Modifier.weight(1f),
                 ) {
                     Text("STOP", fontSize = 9.sp)

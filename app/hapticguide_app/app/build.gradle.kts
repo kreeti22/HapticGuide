@@ -69,6 +69,9 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$cameraVersion")
     implementation("androidx.camera:camera-view:$cameraVersion")
 
+    // USB Serial driver
+    implementation("com.github.mik3y:usb-serial-for-android:3.8.0")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")
