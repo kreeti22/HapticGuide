@@ -16,15 +16,15 @@ import java.io.File
 
 /**
  * Microphone voice command recorder for navigation destination input.
- * Captures short audio clips and sends them to FastAPI /nav/voice.
+ * Captures short audio clips (M4A / AAC) and provides them to the upload layer.
  */
-class VoiceRecorder(
+open class VoiceRecorder(
     private val context: Context,
     private val httpClient: NavHttpClient = NavHttpClient(),
 ) {
     companion object {
-        private const val TAG = "VoiceRecorder"
-        private const val AUDIO_FILENAME = "voice_command.m4a"
+        private const val TAG = "VOICE"
+        const val AUDIO_FILENAME = "voice_command.m4a"
     }
 
     data class VoiceState(
@@ -47,7 +47,18 @@ class VoiceRecorder(
         httpClient.httpPort = httpPort
     }
 
-    fun startRecording(): Boolean {
+    fun getAudioFile(): File? = audioFile
+
+    fun getAudioBytes(): ByteArray? {
+        val file = audioFile
+        return if (file != null && file.exists() && file.length() > 0) {
+            file.readBytes()
+        } else {
+            null
+        }
+    }
+
+    open fun startRecording(): Boolean {
         if (_state.value.isRecording) return false
 
         try {
@@ -73,7 +84,7 @@ class VoiceRecorder(
                 isRecording = true,
                 statusMessage = "Listening...",
             )
-            Log.i(TAG, "Voice recording started")
+            Log.i(TAG, "VOICE: Recording started")
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start recording: ${e.message}", e)
@@ -85,7 +96,7 @@ class VoiceRecorder(
         }
     }
 
-    fun stopRecordingAndSend(onResult: ((JSONObject?) -> Unit)? = null) {
+    open fun stopRecordingAndSend(onResult: ((JSONObject?) -> Unit)? = null) {
         if (!_state.value.isRecording) return
 
         try {
@@ -99,10 +110,11 @@ class VoiceRecorder(
                 isProcessing = true,
                 statusMessage = "Transcribing with Groq...",
             )
-            Log.i(TAG, "Voice recording stopped. Sending audio...")
+            Log.i(TAG, "VOICE: Recording stopped")
 
             val file = audioFile
             if (file != null && file.exists() && file.length() > 0) {
+                Log.i(TAG, "VOICE: Audio file created: ${file.name}")
                 scope.launch {
                     val bytes = file.readBytes()
                     val result = httpClient.postVoice(bytes, file.name)
@@ -123,6 +135,7 @@ class VoiceRecorder(
                     isProcessing = false,
                     statusMessage = "No audio recorded",
                 )
+                onResult?.invoke(null)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to stop/send recording: ${e.message}", e)
@@ -131,10 +144,11 @@ class VoiceRecorder(
                 isProcessing = false,
                 statusMessage = "Error: ${e.message}",
             )
+            onResult?.invoke(null)
         }
     }
 
-    fun cancelRecording() {
+    open fun cancelRecording() {
         try {
             recorder?.apply {
                 stop()

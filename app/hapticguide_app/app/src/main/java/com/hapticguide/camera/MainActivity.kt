@@ -47,17 +47,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import android.view.KeyEvent
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.hapticguide.navigation.LocationTracker
 import com.hapticguide.navigation.VoiceRecorder
+import com.hapticguide.navigation.VolumeKeyVoiceTrigger
 
 class MainActivity : ComponentActivity() {
 
-    private lateinit var settingsManager: SettingsManager
-    private lateinit var tcpSender:       TcpFrameSender
-    private lateinit var cameraManager:   CameraManager
-    private lateinit var locationTracker: LocationTracker
-    private lateinit var voiceRecorder:   VoiceRecorder
+    private lateinit var settingsManager:        SettingsManager
+    private lateinit var tcpSender:              TcpFrameSender
+    private lateinit var cameraManager:          CameraManager
+    private lateinit var locationTracker:        LocationTracker
+    private lateinit var voiceRecorder:          VoiceRecorder
+    private lateinit var volumeKeyVoiceTrigger:  VolumeKeyVoiceTrigger
 
     private var isCameraPermissionGranted by mutableStateOf(false)
     private var isLocationPermissionGranted by mutableStateOf(false)
@@ -96,6 +99,10 @@ class MainActivity : ComponentActivity() {
         )
         locationTracker = LocationTracker(this)
         voiceRecorder   = VoiceRecorder(this)
+        volumeKeyVoiceTrigger = VolumeKeyVoiceTrigger(
+            voiceRecorder     = voiceRecorder,
+            phoneHapticPlayer = locationTracker.phoneHapticPlayer,
+        )
 
         checkPermissions()
 
@@ -112,17 +119,34 @@ class MainActivity : ComponentActivity() {
                     color    = MaterialTheme.colorScheme.background,
                 ) {
                     StreamerScreen(
-                        cameraManager       = cameraManager,
-                        tcpSender           = tcpSender,
-                        settingsManager     = settingsManager,
-                        isPermissionGranted = isCameraPermissionGranted,
-                        onRequestPermission = { checkPermissions() },
-                        locationTracker     = locationTracker,
-                        voiceRecorder       = voiceRecorder,
+                        cameraManager         = cameraManager,
+                        tcpSender             = tcpSender,
+                        settingsManager       = settingsManager,
+                        isPermissionGranted   = isCameraPermissionGranted,
+                        onRequestPermission   = { checkPermissions() },
+                        locationTracker       = locationTracker,
+                        voiceRecorder         = voiceRecorder,
+                        volumeKeyVoiceTrigger = volumeKeyVoiceTrigger,
                     )
                 }
             }
         }
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            val handled = volumeKeyVoiceTrigger.handleKeyDown(keyCode, event?.repeatCount ?: 0)
+            if (handled) return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            val handled = volumeKeyVoiceTrigger.handleKeyUp(keyCode)
+            if (handled) return true
+        }
+        return super.onKeyUp(keyCode, event)
     }
 
     private fun checkPermissions() {
@@ -167,6 +191,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        volumeKeyVoiceTrigger.reset()
         voiceRecorder.cancelRecording()
         locationTracker.stop()
         (locationTracker.serialTransport as? com.hapticguide.serial.HapticSerialManager)?.shutdown()
@@ -180,21 +205,23 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun StreamerScreen(
-    cameraManager:       CameraManager,
-    tcpSender:           TcpFrameSender,
-    settingsManager:     SettingsManager,
-    isPermissionGranted: Boolean,
-    onRequestPermission: () -> Unit,
-    locationTracker:     LocationTracker,
-    voiceRecorder:       VoiceRecorder,
+    cameraManager:         CameraManager,
+    tcpSender:             TcpFrameSender,
+    settingsManager:       SettingsManager,
+    isPermissionGranted:   Boolean,
+    onRequestPermission:   () -> Unit,
+    locationTracker:       LocationTracker,
+    voiceRecorder:         VoiceRecorder,
+    volumeKeyVoiceTrigger: VolumeKeyVoiceTrigger,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val focusManager   = LocalFocusManager.current
 
-    val senderState by tcpSender.state.collectAsState()
-    val cameraFps   by cameraManager.cameraFps.collectAsState()
-    val gpsState    by locationTracker.state.collectAsState()
-    val voiceState  by voiceRecorder.state.collectAsState()
+    val senderState     by tcpSender.state.collectAsState()
+    val cameraFps       by cameraManager.cameraFps.collectAsState()
+    val gpsState        by locationTracker.state.collectAsState()
+    val voiceState      by voiceRecorder.state.collectAsState()
+    val activationState by volumeKeyVoiceTrigger.activationState.collectAsState()
 
     // Editable fields — initialised from persisted settings
     var serverIp    by remember { mutableStateOf(settingsManager.getServerIp()) }
@@ -272,10 +299,16 @@ fun StreamerScreen(
             }
             InfoRow("GPS", gpsValue, valueColor = gpsColor)
 
-            val voiceColor = if (voiceState.isRecording) Color(0xFFFF5722)
+            val voiceColor = if (activationState == com.hapticguide.navigation.VoiceActivationState.RECORDING || voiceState.isRecording) Color(0xFFFF5722)
+                             else if (activationState == com.hapticguide.navigation.VoiceActivationState.ARMED) Color(0xFFFFB74D)
                              else if (voiceState.isProcessing) Color(0xFF64B5F6)
                              else Color.White
-            InfoRow("Voice Status", voiceState.statusMessage, valueColor = voiceColor)
+            val voiceMsg = if (activationState != com.hapticguide.navigation.VoiceActivationState.IDLE) {
+                "Vol Chord: ${activationState.statusText}"
+            } else {
+                voiceState.statusMessage
+            }
+            InfoRow("Voice Trigger", voiceMsg, valueColor = voiceColor)
             if (!voiceState.lastDestination.isNullOrEmpty()) {
                 InfoRow("Destination", voiceState.lastDestination ?: "", valueColor = Color(0xFF81C784))
             }
