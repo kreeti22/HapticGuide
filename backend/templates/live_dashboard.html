@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HapticGuide — Live Belt Dashboard</title>
+<title>HapticGuide — Live Belt & Navigation Dashboard</title>
 <style>
 /* ── Design System & Base Reset ──────────────────────────────────────── */
 * {
@@ -26,6 +26,7 @@
   --text-muted: #4b5563;
   --success: #10b981;
   --warning: #f59e0b;
+  --danger: #ef4444;
 }
 
 body {
@@ -39,6 +40,56 @@ body {
   padding: 32px 16px 40px;
   gap: 20px;
   overflow-x: hidden;
+}
+
+/* ── Top-Right Navigation Switch Button ──────────────────────────────── */
+.nav-switch-btn {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  background: rgba(13, 15, 19, 0.88);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  padding: 8px 18px;
+  border-radius: 24px;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+  color: var(--cyan-accent);
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), 0 0 12px rgba(56, 189, 248, 0.15);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.nav-switch-btn:hover {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: var(--cyan-accent);
+  box-shadow: 0 6px 24px rgba(56, 189, 248, 0.35);
+  transform: translateY(-2px);
+}
+
+.nav-switch-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: background 0.3s, box-shadow 0.3s;
+}
+
+.nav-switch-dot.active {
+  background: var(--success);
+  box-shadow: 0 0 10px var(--success);
+  animation: navPulse 1.8s infinite;
+}
+
+@keyframes navPulse {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
 }
 
 /* ── Typography & Header ─────────────────────────────────────────────── */
@@ -76,6 +127,13 @@ body {
   opacity: 0.75;
 }
 
+.header-badges {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
 .phone-status-badge {
   display: inline-flex;
   align-items: center;
@@ -90,7 +148,6 @@ body {
   color: var(--text-secondary);
   backdrop-filter: blur(8px);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-  margin-top: 4px;
 }
 
 .status-dot {
@@ -139,7 +196,6 @@ body {
   width: 100%;
   position: relative;
   border-radius: 38px;
-  /* Persistent elevated 3D depth state */
   transform: perspective(1000px) scale(1.06) translateZ(28px) rotateX(1deg) rotateY(-0.5deg);
   transform-style: preserve-3d;
   filter: 
@@ -148,7 +204,6 @@ body {
   will-change: transform;
 }
 
-/* Subtle High-Frequency Physical Phone Vibration Animation (For FRONT Obstacles) */
 @keyframes phonePhysicalVibration {
   0%   { transform: perspective(1000px) scale(1.06) translateZ(28px) rotateX(1deg) rotateY(-0.5deg) translate(0, 0); }
   20%  { transform: perspective(1000px) scale(1.06) translateZ(28px) rotateX(1deg) rotateY(-0.5deg) translate(-1px, 0.5px); }
@@ -243,7 +298,6 @@ body {
   display: block;
 }
 
-/* Micro-Vibration Animation for Belt Motors */
 @keyframes hapticVibration {
   0%   { transform: translate(0, 0) scale(1); opacity: 1; }
   20%  { transform: translate(calc(-0.8px * var(--vib-scale, 1)), calc(0.4px * var(--vib-scale, 1))) scale(1.008); opacity: 0.98; }
@@ -341,7 +395,7 @@ body {
 .legend-dot.left { background: var(--cyan-accent); }
 .legend-dot.right { background: var(--purple-accent); }
 
-/* ── Minimal Professional Telemetry Panel (No Emojis) ───────────────── */
+/* ── Minimal Professional Telemetry Panel ───────────────────────────── */
 .telemetry-panel {
   width: 100%;
   max-width: 840px;
@@ -420,7 +474,7 @@ body {
 .tele-value.warning { color: var(--warning); }
 .tele-value.gold { color: var(--gold-accent); font-family: 'Courier New', monospace; }
 
-/* Full-width PWM Motor Intensity Card */
+/* PWM Motor Intensity Card */
 .pwm-card {
   background: var(--bg-card);
   border: 1px solid var(--border-card);
@@ -473,6 +527,293 @@ body {
   font-family: 'Courier New', monospace;
 }
 
+/* ── Navigation Modal / Window ───────────────────────────────────────── */
+.nav-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(4, 6, 9, 0.82);
+  backdrop-filter: blur(14px);
+  z-index: 200;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.nav-modal-window {
+  background: var(--bg-card);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 20px;
+  width: 100%;
+  max-width: 620px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8), 0 0 30px rgba(56, 189, 248, 0.15);
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  animation: modalEnter 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalEnter {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-card);
+  padding-bottom: 14px;
+}
+
+.modal-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.modal-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  color: var(--text-primary);
+  text-transform: uppercase;
+}
+
+.modal-close-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-card);
+  color: var(--text-secondary);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  transition: all 0.2s;
+}
+
+.modal-close-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fff;
+  border-color: var(--danger);
+}
+
+/* Nav Status Bar in Modal */
+.nav-status-pill-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-card);
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.72rem;
+}
+
+.status-indicator-badge {
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: rgba(156, 163, 175, 0.15);
+  color: var(--text-secondary);
+}
+
+.status-indicator-badge.navigating { background: rgba(16, 185, 129, 0.18); color: var(--success); }
+.status-indicator-badge.route_ready { background: rgba(56, 189, 248, 0.18); color: var(--cyan-accent); }
+.status-indicator-badge.arrived { background: rgba(245, 158, 11, 0.18); color: var(--gold-accent); }
+
+/* Voice & Search Input Sections */
+.nav-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.voice-record-card {
+  background: rgba(56, 189, 248, 0.04);
+  border: 1px dashed rgba(56, 189, 248, 0.35);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.voice-btn {
+  background: var(--cyan-accent);
+  color: #000;
+  border: none;
+  padding: 9px 18px;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.voice-btn:hover {
+  box-shadow: 0 0 16px var(--cyan-glow);
+  transform: scale(1.02);
+}
+
+.voice-btn.recording {
+  background: var(--danger);
+  color: #fff;
+  animation: recordGlow 1s infinite alternate;
+}
+
+@keyframes recordGlow {
+  from { box-shadow: 0 0 4px var(--danger); }
+  to { box-shadow: 0 0 18px var(--danger); }
+}
+
+.transcript-feedback {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: none;
+}
+
+.search-bar-row {
+  display: flex;
+  gap: 8px;
+}
+
+.search-input {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border-card);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.search-input:focus {
+  border-color: var(--cyan-accent);
+}
+
+.btn-primary {
+  background: var(--cyan-accent);
+  color: #000;
+  border: none;
+  border-radius: 10px;
+  padding: 0 18px;
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary:hover {
+  background: #7dd3fc;
+  box-shadow: 0 0 14px var(--cyan-glow);
+}
+
+/* Route Details Display in Modal */
+.route-details-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-card);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.route-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.route-stat-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.instruction-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(56, 189, 248, 0.06);
+  border-left: 3px solid var(--cyan-accent);
+  padding: 10px 14px;
+  border-radius: 0 8px 8px 0;
+}
+
+.maneuver-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+/* Navigation Action Buttons */
+.modal-actions-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.btn-start-nav {
+  flex: 1;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+}
+
+.btn-start-nav:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.45);
+}
+
+.btn-reset-nav {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 10px;
+  padding: 12px 18px;
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-reset-nav:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: var(--danger);
+}
+
 /* Footer */
 .system-stats {
   font-size: 0.65rem;
@@ -481,9 +822,10 @@ body {
   letter-spacing: 0.08em;
 }
 
-/* Responsive Breakpoints & Overflow Prevention */
+/* Responsive */
 @media (max-width: 768px) {
   .phone-wrapper { width: clamp(180px, 45%, 290px); top: -50px; }
+  .nav-switch-btn { top: 16px; right: 16px; padding: 7px 14px; font-size: 0.65rem; }
 }
 
 @media (max-width: 540px) {
@@ -492,20 +834,29 @@ body {
   .phone-wrapper { width: clamp(160px, 48%, 250px); top: -42px; }
   .pwm-row { grid-template-columns: 85px 1fr 36px; gap: 10px; }
   .tele-item { gap: 10px; }
+  .route-stats-grid { grid-template-columns: 1fr; }
 }
 </style>
 </head>
 <body>
+
+  <!-- Top-Right Navigation Switch Button -->
+  <button class="nav-switch-btn" id="btn-open-nav" onclick="openNavModal()">
+    <span class="nav-switch-dot" id="nav-dot"></span>
+    <span id="nav-btn-label">🧭 NAVIGATION</span>
+  </button>
 
   <!-- Header -->
   <header class="header">
     <h1 class="title">
       <span class="word-haptic">HAPTIC</span><span class="word-guide">GUIDE</span>
     </h1>
-    <div class="subtitle">LIVE BELT DASHBOARD</div>
-    <div class="phone-status-badge">
-      <span class="status-dot"></span>
-      <span id="phone-status-text">PHONE CONNECTED</span>
+    <div class="subtitle">LIVE BELT & NAVIGATION DASHBOARD</div>
+    <div class="header-badges">
+      <div class="phone-status-badge">
+        <span class="status-dot"></span>
+        <span id="phone-status-text">PHONE CONNECTED</span>
+      </div>
     </div>
   </header>
 
@@ -577,24 +928,24 @@ body {
       <!-- 2x2 Telemetry Grid Card -->
       <div class="telemetry-grid-card">
         
-        <!-- 1. Current Target -->
+        <!-- 1. Current Target / Destination -->
         <div class="tele-item">
           <div class="tele-icon cyan">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/></svg>
           </div>
           <div class="tele-content">
-            <div class="tele-label">CURRENT TARGET</div>
+            <div class="tele-label">CURRENT TARGET / DESTINATION</div>
             <div class="tele-value cyan" id="val-target">&#8212;</div>
           </div>
         </div>
 
-        <!-- 2. Target Position -->
+        <!-- 2. Target Position / Next Turn -->
         <div class="tele-item">
           <div class="tele-icon purple">
             <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
           </div>
           <div class="tele-content">
-            <div class="tele-label">TARGET POSITION</div>
+            <div class="tele-label">POSITION / NEXT MANEUVER</div>
             <div class="tele-value purple" id="val-position">&#8212;</div>
           </div>
         </div>
@@ -651,10 +1002,87 @@ body {
   </main>
 
   <footer class="system-stats" id="system-stats">
-    Polling /cmd @ 20 Hz &middot; /stats @ 2 Hz
+    Polling /cmd @ 20 Hz &middot; /stats @ 2 Hz &middot; /nav/progress @ 1 Hz
   </footer>
 
+  <!-- ── Navigation Window / Modal ────────────────────────────────────── -->
+  <div class="nav-modal-backdrop" id="nav-modal" onclick="handleBackdropClick(event)">
+    <div class="nav-modal-window">
+      
+      <!-- Modal Header -->
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span style="font-size:1.3rem">🗺️</span>
+          <div class="modal-title">NAVIGATION CONTROL</div>
+        </div>
+        <button class="modal-close-btn" onclick="closeNavModal()">✕</button>
+      </div>
+
+      <!-- Nav Status Bar -->
+      <div class="nav-status-pill-bar">
+        <span>DESTINATION: <strong id="modal-dest-name" style="color:var(--cyan-accent)">NONE</strong></span>
+        <span class="status-indicator-badge" id="modal-status-badge">IDLE</span>
+      </div>
+
+      <!-- Voice Input Card (Groq STT) -->
+      <div class="voice-record-card">
+        <div style="display:flex; flex-direction:column; gap:2px">
+          <span class="tele-label">VOICE DESTINATION SEARCH</span>
+          <span style="font-size:0.72rem; color:var(--text-secondary)">Groq Whisper AI Transcription</span>
+        </div>
+        <button class="voice-btn" id="btn-voice-record" onclick="toggleVoiceRecording()">
+          <span>🎙️</span>
+          <span id="voice-btn-label">SPEAK DESTINATION</span>
+        </button>
+      </div>
+      <div class="transcript-feedback" id="voice-transcript-box"></div>
+
+      <!-- Text Destination Search -->
+      <div class="nav-input-group">
+        <span class="tele-label">MANUAL DESTINATION SEARCH (OVERPASS OSM)</span>
+        <div class="search-bar-row">
+          <input type="text" class="search-input" id="input-destination" placeholder="e.g. Connaught Place, Central Park..." onkeydown="if(event.key==='Enter') executeTextSearch()">
+          <button class="btn-primary" id="btn-search-dest" onclick="executeTextSearch()">SEARCH</button>
+        </div>
+      </div>
+
+      <!-- Route Details Card -->
+      <div class="route-details-card">
+        <div class="route-stats-grid">
+          <div class="route-stat-box">
+            <span class="tele-label">DISTANCE</span>
+            <span class="tele-value cyan" id="modal-route-dist">&#8212;</span>
+          </div>
+          <div class="route-stat-box">
+            <span class="tele-label">DURATION</span>
+            <span class="tele-value purple" id="modal-route-dur">&#8212;</span>
+          </div>
+          <div class="route-stat-box">
+            <span class="tele-label">STEP PROGRESS</span>
+            <span class="tele-value gold" id="modal-step-progress">&#8212;</span>
+          </div>
+        </div>
+
+        <div class="instruction-banner">
+          <span class="maneuver-icon" id="modal-maneuver-icon">⬆️</span>
+          <div style="display:flex; flex-direction:column; gap:2px">
+            <span style="font-size:0.6rem; color:var(--text-muted); font-weight:700">CURRENT INSTRUCTION</span>
+            <span style="font-size:0.88rem; font-weight:700; color:var(--text-primary)" id="modal-current-instruction">Waiting for route calculation...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="modal-actions-row">
+        <button class="btn-start-nav" id="btn-start-nav" onclick="startNavigation()">START NAVIGATION</button>
+        <button class="btn-reset-nav" id="btn-reset-nav" onclick="resetNavigation()">RESET ROUTE</button>
+      </div>
+
+    </div>
+  </div>
+
 <script>
+// ── Motor State & Vibration ───────────────────────────────────────────────
 function setMotorState(motorId, prefix, pwm) {
   const motorEl = document.getElementById(motorId);
   if (!motorEl) return;
@@ -674,23 +1102,11 @@ function setMotorState(motorId, prefix, pwm) {
     let waveSpeed = '1.2s';
 
     if (intensity <= 80) {
-      speed = '0.09s';
-      scale = 0.7;
-      glow = '6px';
-      waveOpacity = 0.4;
-      waveSpeed = '1.2s';
+      speed = '0.09s'; scale = 0.7; glow = '6px'; waveOpacity = 0.4; waveSpeed = '1.2s';
     } else if (intensity <= 170) {
-      speed = '0.07s';
-      scale = 1.15;
-      glow = '12px';
-      waveOpacity = 0.75;
-      waveSpeed = '0.9s';
+      speed = '0.07s'; scale = 1.15; glow = '12px'; waveOpacity = 0.75; waveSpeed = '0.9s';
     } else {
-      speed = '0.05s';
-      scale = 1.6;
-      glow = '18px';
-      waveOpacity = 1.0;
-      waveSpeed = '0.65s';
+      speed = '0.05s'; scale = 1.6; glow = '18px'; waveOpacity = 1.0; waveSpeed = '0.65s';
     }
 
     vibeWrapper.style.setProperty('--vibrate-speed', speed);
@@ -698,13 +1114,9 @@ function setMotorState(motorId, prefix, pwm) {
     vibeWrapper.style.setProperty('--glow-size', glow);
     vibeWrapper.style.setProperty('--wave-speed', waveSpeed);
 
-    // Light up SVG LED indicator
     const led = document.getElementById(prefix + '_motor-led');
-    if (led) {
-      led.setAttribute('fill', prefix === 'lm' ? '#38bdf8' : '#a855f7');
-    }
+    if (led) led.setAttribute('fill', prefix === 'lm' ? '#38bdf8' : '#a855f7');
 
-    // Control SVG Vibration Arcs inside motor SVG
     const vibLeftArc  = document.getElementById(prefix + '_vibration-left');
     const vibRightArc = document.getElementById(prefix + '_vibration-right');
     if (vibLeftArc)  vibLeftArc.style.opacity  = waveOpacity.toString();
@@ -717,13 +1129,9 @@ function setMotorState(motorId, prefix, pwm) {
     vibeWrapper.style.removeProperty('--glow-size');
     vibeWrapper.style.removeProperty('--wave-speed');
 
-    // Turn off SVG LED
     const led = document.getElementById(prefix + '_motor-led');
-    if (led) {
-      led.setAttribute('fill', '#222');
-    }
+    if (led) led.setAttribute('fill', '#222');
 
-    // Hide SVG Vibration Arcs
     const vibLeftArc  = document.getElementById(prefix + '_vibration-left');
     const vibRightArc = document.getElementById(prefix + '_vibration-right');
     if (vibLeftArc)  vibLeftArc.style.opacity  = '0';
@@ -747,6 +1155,7 @@ function getTimestamp() {
   return `${hrs}:${mins}:${secs}.${ms}`;
 }
 
+// ── Poll /cmd (20 Hz) ─────────────────────────────────────────────────────
 async function pollCmd() {
   try {
     const data = await fetch('/cmd').then(r => r.json());
@@ -756,37 +1165,28 @@ async function pollCmd() {
     const frontPwm = data.front ?? 0;
     const backPwm  = data.back  ?? 0;
 
-    // ── 2-MOTOR + PHONE HAPTIC OUTPUT MAPPING ────────────────────
     let phoneVibrating = false;
     let activeLeftPwm  = 0;
     let activeRightPwm = 0;
 
-    // 1. FRONT Obstacle -> Phone Vibration ONLY (Belt motors OFF)
     if (frontPwm > 0) {
       phoneVibrating = true;
       activeLeftPwm  = 0;
       activeRightPwm = 0;
-    } 
-    // 2. LEFT Obstacle -> Left Belt Motor ONLY (Phone OFF, Right OFF)
-    else if (leftPwm > 0) {
+    } else if (leftPwm > 0) {
       phoneVibrating = false;
       activeLeftPwm  = leftPwm;
       activeRightPwm = 0;
-    } 
-    // 3. RIGHT Obstacle -> Right Belt Motor ONLY (Phone OFF, Left OFF)
-    else if (rightPwm > 0) {
+    } else if (rightPwm > 0) {
       phoneVibrating = false;
       activeLeftPwm  = 0;
       activeRightPwm = rightPwm;
-    } 
-    // 4. BACK Obstacle -> Isolated for future specification
-    else if (backPwm > 0) {
+    } else if (backPwm > 0) {
       phoneVibrating = false;
       activeLeftPwm  = 0;
       activeRightPwm = 0;
     }
 
-    // Update Phone Vibration State
     const phoneWrapper = document.querySelector('.phone-wrapper');
     const phoneStatusText = document.getElementById('phone-status-text');
 
@@ -800,15 +1200,12 @@ async function pollCmd() {
       }
     }
 
-    // Drive Left & Right belt motors independently
     setMotorState('leftMotor',  'lm', activeLeftPwm);
     setMotorState('rightMotor', 'rm', activeRightPwm);
 
-    // Update PWM progress bars & numeric values
     updatePwmBar('left',  activeLeftPwm);
     updatePwmBar('right', activeRightPwm);
 
-    // Update Obstacle Alert Status
     const anyActive = leftPwm > 0 || rightPwm > 0 || frontPwm > 0 || backPwm > 0;
     const obstacleVal = document.getElementById('val-obstacle');
     const obstacleBox = document.getElementById('status-icon-box');
@@ -826,6 +1223,7 @@ async function pollCmd() {
   } catch (_) {}
 }
 
+// ── Poll /stats (2 Hz) ───────────────────────────────────────────────────
 async function pollStats() {
   try {
     const data = await fetch('/stats').then(r => r.json());
@@ -834,29 +1232,264 @@ async function pollStats() {
     const valTarget   = document.getElementById('val-target');
     const valPosition = document.getElementById('val-position');
 
-    if (target && typeof target === 'object') {
-      if (valTarget)   valTarget.textContent   = (target.class_name || '—').toUpperCase();
-      if (valPosition) valPosition.textContent = (target.position || '0°').toUpperCase();
-    } else if (typeof target === 'string' && target.length) {
-      if (valTarget)   valTarget.textContent   = target.toUpperCase();
-      if (valPosition) valPosition.textContent = '0°';
-    } else {
-      if (valTarget)   valTarget.textContent   = 'CENTER';
-      if (valPosition) valPosition.textContent = '0°';
+    // Only update if not overridden by navigation destination
+    if (!activeNavigationDestination) {
+      if (target && typeof target === 'object') {
+        if (valTarget)   valTarget.textContent   = (target.class_name || '—').toUpperCase();
+        if (valPosition) valPosition.textContent = (target.position || '0°').toUpperCase();
+      } else if (typeof target === 'string' && target.length) {
+        if (valTarget)   valTarget.textContent   = target.toUpperCase();
+        if (valPosition) valPosition.textContent = '0°';
+      }
     }
 
     const statsFooter = document.getElementById('system-stats');
     if (statsFooter && data.yolo_fps !== undefined) {
-      statsFooter.textContent = `YOLO: ${data.yolo_fps} FPS | Cam: ${data.camera_fps} FPS | Age: ${data.frame_age_ms}ms`;
+      statsFooter.textContent = `YOLO: ${data.yolo_fps} FPS | Cam: ${data.camera_fps} FPS | Age: ${data.frame_age_ms}ms | /cmd @ 20 Hz`;
     }
   } catch (_) {}
 }
 
-// Initialize polling
+// ── Maneuver Icon Helper ──────────────────────────────────────────────────
+function getManeuverIcon(maneuver) {
+  if (!maneuver) return '⬆️';
+  const m = maneuver.toUpperCase();
+  if (m.includes('LEFT')) return '⬅️';
+  if (m.includes('RIGHT')) return '➡️';
+  if (m.includes('ARRIV')) return '🏁';
+  if (m.includes('UTURN')) return '↩️';
+  return '⬆️';
+}
+
+// ── Poll /nav/progress (1 Hz) ─────────────────────────────────────────────
+let activeNavigationDestination = null;
+
+async function pollNav() {
+  try {
+    const res = await fetch('/nav/progress').then(r => r.json());
+    if (!res.ok) return;
+
+    const status = res.status || 'IDLE';
+    const destName = res.destination_name || (res.destination ? res.destination.name : null);
+    activeNavigationDestination = destName;
+
+    // Top-Right Switch Dot
+    const navDot = document.getElementById('nav-dot');
+    const navBtnLabel = document.getElementById('nav-btn-label');
+    if (navDot) {
+      if (status === 'NAVIGATING') {
+        navDot.className = 'nav-switch-dot active';
+        if (navBtnLabel) navBtnLabel.textContent = '🧭 NAVIGATING';
+      } else if (status === 'ROUTE_READY') {
+        navDot.className = 'nav-switch-dot';
+        navDot.style.background = 'var(--cyan-accent)';
+        if (navBtnLabel) navBtnLabel.textContent = '🧭 ROUTE READY';
+      } else {
+        navDot.className = 'nav-switch-dot';
+        navDot.style.background = 'var(--text-muted)';
+        if (navBtnLabel) navBtnLabel.textContent = '🧭 NAVIGATION';
+      }
+    }
+
+    // Modal elements
+    const modalDest = document.getElementById('modal-dest-name');
+    const modalBadge = document.getElementById('modal-status-badge');
+    const modalDist = document.getElementById('modal-route-dist');
+    const modalDur = document.getElementById('modal-route-dur');
+    const modalProg = document.getElementById('modal-step-progress');
+    const modalInstr = document.getElementById('modal-current-instruction');
+    const modalIcon = document.getElementById('modal-maneuver-icon');
+
+    if (modalDest) modalDest.textContent = destName ? destName.toUpperCase() : 'NONE';
+    if (modalBadge) {
+      modalBadge.textContent = status;
+      modalBadge.className = 'status-indicator-badge ' + status.toLowerCase();
+    }
+
+    const prog = res.progress || {};
+    const currInstr = prog.current_instruction ? prog.current_instruction.text : (res.current_instruction ? (res.current_instruction.text || res.current_instruction) : '—');
+    const maneuver = prog.current_instruction ? prog.current_instruction.maneuver : 'STRAIGHT';
+
+    if (modalInstr) modalInstr.textContent = currInstr || 'Waiting for route calculation...';
+    if (modalIcon) modalIcon.textContent = getManeuverIcon(maneuver);
+
+    const remDist = prog.remaining_distance_m ?? res.remaining_distance_m;
+    const totDur = res.total_route_duration_s;
+
+    if (modalDist) modalDist.textContent = remDist !== undefined && remDist !== null ? `${Math.round(remDist)} m` : '—';
+    if (modalDur) modalDur.textContent = totDur ? `${Math.round(totDur / 60)} min` : '—';
+    if (modalProg) modalProg.textContent = prog.total_steps ? `Step ${prog.current_step_index + 1}/${prog.total_steps}` : '—';
+
+    // If active navigation, reflect destination and instruction on telemetry panel
+    if (status === 'NAVIGATING' && destName) {
+      const valTarget = document.getElementById('val-target');
+      const valPosition = document.getElementById('val-position');
+      if (valTarget) valTarget.textContent = destName.toUpperCase();
+      if (valPosition) valPosition.textContent = `${getManeuverIcon(maneuver)} ${maneuver.toUpperCase()}`;
+    }
+
+  } catch (_) {}
+}
+
+// ── Modal Actions ─────────────────────────────────────────────────────────
+function openNavModal() {
+  const modal = document.getElementById('nav-modal');
+  if (modal) modal.style.display = 'flex';
+  pollNav();
+}
+
+function closeNavModal() {
+  const modal = document.getElementById('nav-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function handleBackdropClick(e) {
+  if (e.target.id === 'nav-modal') {
+    closeNavModal();
+  }
+}
+
+// ── Text Search Handler (Overpass OSM + OSRM) ─────────────────────────────
+async function executeTextSearch() {
+  const input = document.getElementById('input-destination');
+  if (!input) return;
+  const query = input.value.trim();
+  if (!query) return;
+
+  const btn = document.getElementById('btn-search-dest');
+  if (btn) btn.textContent = 'SEARCHING...';
+
+  try {
+    const res = await fetch('/nav/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: query })
+    }).then(r => r.json());
+
+    if (res.ok) {
+      await fetch('/nav/route', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      pollNav();
+    } else {
+      alert(`Search failed: ${res.error || 'Unknown error'}`);
+    }
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  } finally {
+    if (btn) btn.textContent = 'SEARCH';
+  }
+}
+
+// ── Voice Search Handler (Groq STT) ───────────────────────────────────────
+let mediaRecorder = null;
+let audioChunks = [];
+
+async function toggleVoiceRecording() {
+  const btn = document.getElementById('btn-voice-record');
+  const label = document.getElementById('voice-btn-label');
+  const transcriptBox = document.getElementById('voice-transcript-box');
+
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+    if (btn) btn.className = 'voice-btn';
+    if (label) label.textContent = 'PROCESSING AUDIO (GROQ)...';
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) audioChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = async () => {
+      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+      stream.getTracks().forEach(track => track.stop());
+
+      if (transcriptBox) {
+        transcriptBox.style.display = 'block';
+        transcriptBox.textContent = 'Transcribing with Groq Whisper...';
+      }
+
+      try {
+        const formData = new FormData();
+        formData.append('file', audioBlob, 'command.webm');
+
+        const voiceRes = await fetch('/nav/voice', {
+          method: 'POST',
+          body: formData,
+        }).then(r => r.json());
+
+        if (voiceRes.ok) {
+          if (transcriptBox) {
+            transcriptBox.innerHTML = `<strong>Transcript:</strong> "${voiceRes.transcript}"<br><strong>Destination:</strong> ${voiceRes.destination ? voiceRes.destination.name : voiceRes.destination_query}`;
+          }
+          pollNav();
+        } else {
+          if (transcriptBox) {
+            transcriptBox.innerHTML = `<span style="color:var(--danger)">${voiceRes.error || 'Voice search failed'}</span>`;
+          }
+        }
+      } catch (err) {
+        if (transcriptBox) transcriptBox.textContent = `Upload error: ${err.message}`;
+      } finally {
+        if (label) label.textContent = 'SPEAK DESTINATION';
+      }
+    };
+
+    mediaRecorder.start();
+    if (btn) btn.className = 'voice-btn recording';
+    if (label) label.textContent = '🔴 RECORDING... TAP TO STOP';
+    if (transcriptBox) {
+      transcriptBox.style.display = 'block';
+      transcriptBox.textContent = 'Listening... Speak destination clearly';
+    }
+  } catch (err) {
+    alert(`Microphone permission denied or unavailable: ${err.message}`);
+  }
+}
+
+// ── Navigation Start / Reset ──────────────────────────────────────────────
+async function startNavigation() {
+  try {
+    const res = await fetch('/nav/start', { method: 'POST' }).then(r => r.json());
+    if (res.ok) {
+      pollNav();
+    } else {
+      alert(`Cannot start: ${res.error || 'Route not ready'}`);
+    }
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  }
+}
+
+async function resetNavigation() {
+  try {
+    await fetch('/nav/reset', { method: 'POST' });
+    const transcriptBox = document.getElementById('voice-transcript-box');
+    if (transcriptBox) transcriptBox.style.display = 'none';
+    const input = document.getElementById('input-destination');
+    if (input) input.value = '';
+    activeNavigationDestination = null;
+    pollNav();
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  }
+}
+
+// ── Initialize Polling ────────────────────────────────────────────────────
 pollCmd();
 pollStats();
+pollNav();
 setInterval(pollCmd, 50);
 setInterval(pollStats, 500);
+setInterval(pollNav, 1000);
 </script>
 </body>
 </html>
