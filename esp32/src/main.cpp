@@ -159,6 +159,9 @@ static void processSerialCommand(const char* rawCommand) {
         cmd[i] = toupper((unsigned char)cmd[i]);
     }
 
+    Serial.print("RX: ");
+    Serial.println(cmd);
+
     if (strcmp(cmd, "START") == 0) {
         Serial.println("[ESP32] CMD: START -> Pulsing Left & Right motors (3x)");
         triggerHapticSequence(true, true, PULSE_COUNT_START, PULSE_ON_DURATION_MS, PULSE_OFF_DURATION_MS, PWM_DUTY_MAX);

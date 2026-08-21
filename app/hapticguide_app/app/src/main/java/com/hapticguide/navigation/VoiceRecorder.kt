@@ -122,6 +122,11 @@ open class VoiceRecorder(
                     val transcript = result?.optString("transcript", "")
                     val dest = result?.optJSONObject("destination")?.optString("name", "")
 
+                    if (ok && !transcript.isNullOrEmpty()) {
+                        Log.i(TAG, "VOICE COMMAND RECEIVED")
+                        Log.i(TAG, "TRANSCRIPT: $transcript")
+                    }
+
                     _state.value = _state.value.copy(
                         isProcessing = false,
                         statusMessage = if (ok) "Destination: $dest" else (result?.optString("error", "Error") ?: "Error"),

@@ -155,6 +155,55 @@ class NavigationEventTest {
         assertEquals(listOf("RIGHT", "LEFT", "STOP"), transport.getSentHistory())
     }
 
+    @Test
+    fun testOncePerSessionStartEmissions() {
+        val transport = StubSerialTransport()
+        val handler = NavigationEventHandler(
+            phoneHapticPlayer = PhoneHapticPlayerStub(),
+            serialTransport = transport
+        )
+
+        val decisionStart = NavigationDecision(
+            status = "NAVIGATING",
+            currentInstruction = "Start walking north",
+            nextInstruction = null,
+            pendingHapticEvent = NavigationEvent.START,
+        )
+
+        // Multiple START decisions in same session
+        handler.handleDecision(decisionStart)
+        handler.handleDecision(decisionStart)
+        handler.handleDecision(decisionStart)
+
+        // Must emit only ONE START command
+        assertEquals(listOf("START"), transport.getSentHistory())
+
+        // Reset session
+        handler.reset()
+        assertEquals(listOf("START", "STOP"), transport.getSentHistory())
+
+        // New session after reset can emit START again
+        handler.handleDecision(decisionStart)
+        assertEquals(listOf("START", "STOP", "START"), transport.getSentHistory())
+    }
+
+    @Test
+    fun testDisconnectedSerialTransportDoesNotCrash() {
+        val transport = StubSerialTransport()
+        transport.disconnect()
+        assertFalse(transport.isConnected())
+
+        // Should return cleanly without throwing exceptions
+        val handler = NavigationEventHandler(
+            phoneHapticPlayer = PhoneHapticPlayerStub(),
+            serialTransport = transport
+        )
+
+        handler.handleEvent(NavigationEvent.LEFT)
+        handler.handleEvent(NavigationEvent.RIGHT)
+        handler.reset()
+    }
+
     private class PhoneHapticPlayerStub : PhoneHapticPlayer(null as android.content.Context?) {
         override fun handleHapticEvent(eventType: String?) {
             // No-op for unit test
